@@ -2,3 +2,5 @@
 /.idea
 /.vscode
 /local-notes
+/dist/*.tar.gz
+/dist/*.sha256

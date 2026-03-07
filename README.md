@@ -1,13 +1,24 @@
 # fastIPAV
 
 低遅延 AV-over-IP を想定した `tx` / `rx` 構成の Rust 実装である。  
-現状の主軸は `GStreamer` backend、映像 `H.264`、音声 `PCM/L16`、LAN 内 multicast 配信である。
+主軸は `GStreamer` backend、映像 `H.264`、音声 `PCM/L16`、LAN 内 RTP/UDP multicast 配信である。
 
 ## 推奨 OS
 
 - Raspberry Pi: `Raspberry Pi OS Bookworm 64bit`
 - Linux PC: `Ubuntu LTS`
-  - 開発確認は Ubuntu 24.04 LTS 系を想定
+  - 現時点の開発確認は Ubuntu 24.04 LTS 系を基準にしている
+
+## 配布方針
+
+このリポジトリは、通常運用では「ソースを clone してローカルでビルドする」よりも、`GitHub Releases` に置いたビルド済みアーカイブを `scripts/install.sh` で取得して配置する使い方を想定している。
+
+想定フロー:
+
+1. 依存 package を入れる
+2. `git clone`
+3. `./scripts/install.sh`
+4. 必要なら `systemctl enable --now ...`
 
 ## できること
 
@@ -27,23 +38,22 @@
 - `configs`: 設定例
 - `systemd`: service 雛形
 - `tools`: 補助スクリプト
+- `scripts`: release 生成と install スクリプト
 
-## セットアップ
+## クイックスタート
 
-### 1. 共通 package
+### Linux PC / Raspberry Pi 共通
 
-Raspberry Pi / Linux PC のどちらでも、まず以下を導入する。
+依存 package を入れる。
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
-  build-essential \
-  pkg-config \
   curl \
+  ca-certificates \
   git \
-  libasound2-dev \
-  libgstreamer1.0-dev \
-  libgstreamer-plugins-base1.0-dev \
+  tar \
+  libasound2 \
   gstreamer1.0-tools \
   gstreamer1.0-plugins-base \
   gstreamer1.0-plugins-good \
@@ -57,25 +67,61 @@ sudo apt-get install -y \
   alsa-utils
 ```
 
-Rust toolchain は `rustup` で入れる。
-
-```bash
-curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
-source "$HOME/.cargo/env"
-rustc --version
-cargo --version
-```
-
-リポジトリを取得してビルドする。
+リポジトリを取得して install スクリプトを実行する。
 
 ```bash
 git clone git@github.com:ponpaku/fastIPAV.git
 cd fastIPAV
-source "$HOME/.cargo/env"
-cargo build
+./scripts/install.sh
 ```
 
-### 2. Linux PC のセットアップ
+依存もスクリプト側にやらせる場合:
+
+```bash
+./scripts/install.sh --install-deps
+```
+
+`tx` / `rx` の unit を同時に有効化したい場合:
+
+```bash
+./scripts/install.sh --enable-service both
+```
+
+`rx` だけ有効化したい場合:
+
+```bash
+./scripts/install.sh --enable-service rx
+```
+
+### install 後の配置先
+
+- バイナリ: `/usr/local/bin/tx` `/usr/local/bin/rx`
+- 共有設定例: `/usr/local/share/fastipav/configs/`
+- 実運用設定: `/etc/avoverip/tx.toml` `/etc/avoverip/rx.toml`
+- systemd unit: `/etc/systemd/system/avoverip-tx.service` `/etc/systemd/system/avoverip-rx.service`
+
+既存の `/etc/avoverip/tx.toml` と `/etc/avoverip/rx.toml` は上書きしない。
+
+## Raspberry Pi のセットアップ
+
+Raspberry Pi は `Raspberry Pi OS Bookworm 64bit` を前提にする。  
+受信では KMS/DRM 寄りの表示経路を優先する。
+
+追加確認:
+
+```bash
+gst-inspect-1.0 kmssink
+gst-inspect-1.0 avdec_h264
+ls -l /dev/video*
+```
+
+補足:
+
+- `scripts/install.sh` は Raspberry Pi を検出すると `configs/tx.pi.toml` と `configs/rx.pi.toml` を既定として `/etc/avoverip/` に配置する
+- H.264 decoder は backend 側で `v4l2h264dec` などを優先し、無ければ `avdec_h264` へフォールバックする
+- UVC キャプチャを使う場合は `video.device` を必要に応じて変更する
+
+## Linux PC のセットアップ
 
 Linux PC は開発機兼、送信機・受信機のどちらにも使う前提である。
 
@@ -94,61 +140,40 @@ gst-inspect-1.0 waylandsink
 - UVC 入力が見えているかは `ls -l /dev/video*` で確認する
 - 音声入出力は `arecord -l` `aplay -l` で確認する
 
+## 起動例
+
 送信の基本起動:
 
 ```bash
-source "$HOME/.cargo/env"
-./target/debug/tx --config configs/tx.default.toml
+/usr/local/bin/tx --config /etc/avoverip/tx.toml
 ```
 
 受信の基本起動:
 
 ```bash
-source "$HOME/.cargo/env"
-./target/debug/rx --config configs/rx.default.toml
+/usr/local/bin/rx --config /etc/avoverip/rx.toml
 ```
 
 音声込みで有効化する場合:
 
 ```bash
-./target/debug/tx --config configs/tx.default.toml --enable-audio
-./target/debug/rx --config configs/rx.default.toml --enable-audio
+/usr/local/bin/tx --config /etc/avoverip/tx.toml --enable-audio
+/usr/local/bin/rx --config /etc/avoverip/rx.toml --enable-audio
 ```
 
-### 3. Raspberry Pi のセットアップ
+## systemd
 
-Raspberry Pi は `Raspberry Pi OS Bookworm 64bit` を前提にする。  
-受信では KMS/DRM 寄りの表示経路を優先する。
+unit 雛形は `systemd/` にある。`scripts/install.sh` は install 時に `/etc/systemd/system/` へ配置する。
 
-追加確認:
+手動で有効化する場合:
 
 ```bash
-gst-inspect-1.0 kmssink
-gst-inspect-1.0 avdec_h264
-ls -l /dev/video*
+sudo systemctl daemon-reload
+sudo systemctl enable --now avoverip-tx
+sudo systemctl enable --now avoverip-rx
 ```
 
-補足:
-
-- `configs/rx.pi.toml` は `renderer = "kms_drm"` を既定にしている
-- H.264 decoder は backend 側で `v4l2h264dec` などを優先し、無ければ `avdec_h264` へフォールバックする
-- UVC キャプチャを使う場合は、必要に応じて `video.device` を `/dev/video0` 以外へ変更する
-
-送信の基本起動:
-
-```bash
-source "$HOME/.cargo/env"
-./target/debug/tx --config configs/tx.pi.toml
-```
-
-受信の基本起動:
-
-```bash
-source "$HOME/.cargo/env"
-./target/debug/rx --config configs/rx.pi.toml
-```
-
-### 4. 設定ファイル
+## 設定ファイル
 
 主要な設定例:
 
@@ -167,7 +192,7 @@ source "$HOME/.cargo/env"
 - TTL: `1`
 - HTTP bind: `127.0.0.1`
 
-### 5. 動作確認
+## 動作確認
 
 ヘルス確認:
 
@@ -194,35 +219,48 @@ curl -fsS http://127.0.0.1:8082/stats
 - `dropped_frames`
 - `dropped_audio_chunks`
 
-### 6. systemd
+## release 生成
 
-雛形は以下に置いてある。
+release アーカイブは `scripts/package-release.sh` で作る。
 
-- `systemd/avoverip-tx.service`
-- `systemd/avoverip-rx.service`
-
-例:
+ホストと同じ architecture 向け:
 
 ```bash
-sudo install -D -m 0644 systemd/avoverip-tx.service /etc/systemd/system/avoverip-tx.service
-sudo install -D -m 0644 systemd/avoverip-rx.service /etc/systemd/system/avoverip-rx.service
-sudo mkdir -p /etc/avoverip
-sudo cp configs/tx.default.toml /etc/avoverip/tx.toml
-sudo cp configs/rx.default.toml /etc/avoverip/rx.toml
-sudo systemctl daemon-reload
-sudo systemctl enable --now avoverip-tx
-sudo systemctl enable --now avoverip-rx
+source "$HOME/.cargo/env"
+./scripts/package-release.sh --version v0.1.0
 ```
 
-### 7. 実機テスト前の確認項目
+Raspberry Pi 向け `aarch64` release:
 
-- `cargo check` と `cargo build` が通る
-- `gst-inspect-1.0 x264enc` が通る
-- `gst-inspect-1.0 avdec_h264` が通る
-- 送信側で `/dev/video*` が見える
-- 受信側で使用する sink が使える
-  - Linux PC: `waylandsink` または `ximagesink`
-  - Raspberry Pi: `kmssink`
+```bash
+source "$HOME/.cargo/env"
+rustup target add aarch64-unknown-linux-gnu
+./scripts/package-release.sh --version v0.1.0 --target aarch64-unknown-linux-gnu
+```
+
+生成物:
+
+- `dist/fastipav-v0.1.0-linux-x86_64.tar.gz`
+- `dist/fastipav-v0.1.0-linux-aarch64.tar.gz`
+- `dist/*.sha256`
+
+## ソースからビルドしたい場合
+
+開発用途では従来どおり `cargo build` も使える。
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential \
+  pkg-config \
+  libasound2-dev \
+  libgstreamer1.0-dev \
+  libgstreamer-plugins-base1.0-dev
+
+curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+source "$HOME/.cargo/env"
+cargo build
+```
 
 ## 既知の制約
 
