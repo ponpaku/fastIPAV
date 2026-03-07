@@ -1,0 +1,17 @@
+[package]
+name = "avoverip-rx"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rx"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+avoverip-backend-gst = { path = "../backends/gst" }
+avoverip-common = { path = "../common" }

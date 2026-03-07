@@ -1,0 +1,41 @@
+node_name = "avoverip-tx"
+
+[platform]
+profile = "linux_pc"
+
+[network]
+multicast_group = "239.255.10.10"
+video_port = 5004
+audio_port = 5006
+interface = "auto"
+ttl = 1
+video_payload_type = 96
+audio_payload_type = 97
+rtp_mtu = 1200
+receive_buffer_size = 0
+
+[http]
+bind_addr = "127.0.0.1"
+port = 8081
+
+[recovery]
+restart_backoff_ms = 1000
+monitor_interval_ms = 250
+
+[video]
+device = "/dev/video0"
+width = 1920
+height = 1080
+fps = 30
+bitrate_kbps = 8000
+gop = 30
+encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast"
+
+[audio]
+enabled = false
+device = "default"
+sample_rate = 48000
+channels = 2
+buffer_time_us = 20000
+latency_time_us = 5000
+use_driver_timestamps = true

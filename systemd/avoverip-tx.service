@@ -1,0 +1,16 @@
+[Unit]
+Description=Low-latency AV-over-IP transmitter
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/tx --config /etc/avoverip/tx.toml
+Restart=on-failure
+RestartSec=1
+Environment=RUST_LOG=info
+WorkingDirectory=/opt/avoverip
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
