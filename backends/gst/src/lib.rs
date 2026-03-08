@@ -250,7 +250,7 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
             "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ",
             "! videoconvert ",
             "! video/x-raw,format=I420 ",
-            "! {encoder} bitrate={bitrate_kbps} key-int-max={gop} bframes=0 aud=true byte-stream=true sliced-threads=true ",
+            "! {encoder} bitrate={bitrate_kbps} key-int-max={gop} bframes=0 aud=true byte-stream=true ",
             "! h264parse config-interval=-1 ",
             "! rtph264pay pt={payload_type} config-interval=1 mtu={mtu} ",
             "! udpsink host={group} port={port} auto-multicast=true ttl-mc={ttl} sync=false async=false{iface}"
@@ -486,7 +486,7 @@ fn preferred_h264_decoder(profile: &PlatformProfile) -> String {
             }
         }
         PlatformProfile::LinuxPc | PlatformProfile::Auto => {
-            for candidate in ["vah264dec", "vaapih264dec", "avdec_h264", "openh264dec", "decodebin"] {
+            for candidate in ["avdec_h264", "openh264dec", "vah264dec", "vaapih264dec", "decodebin"] {
                 if candidate == "decodebin" || has_element(candidate) {
                     return candidate.to_string();
                 }

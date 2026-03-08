@@ -116,7 +116,7 @@ async fn run_supervisor(
 
         let restart_reason = loop {
             tokio::select! {
-                _ = tokio::signal::ctrl_c() => {
+                _ = shutdown_signal() => {
                     info!("shutdown requested");
                     state.mark_stopping("tx shutting down").await;
                     if let Err(err) = pipeline.stop() {
@@ -148,6 +148,30 @@ async fn run_supervisor(
             config.recovery.restart_backoff_ms, restart_reason
         );
         tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)).await;
+    }
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        match signal(SignalKind::terminate()) {
+            Ok(mut terminate) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = terminate.recv() => {}
+                }
+            }
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
     }
 }
 

@@ -27,9 +27,9 @@ width = 1920
 height = 1080
 fps = 30
 jitter_latency_ms = 20
-decoder_element = "decodebin"
+decoder_element = "avdec_h264"
 renderer = "sdl"
-fullscreen = true
+fullscreen = false
 sync = true
 max_lateness_ms = 25
 

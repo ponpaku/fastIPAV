@@ -25,6 +25,10 @@ struct Cli {
     bind_addr: Option<String>,
     #[arg(long)]
     http_port: Option<u16>,
+    #[arg(long, conflicts_with = "windowed")]
+    fullscreen: bool,
+    #[arg(long, conflicts_with = "fullscreen")]
+    windowed: bool,
     #[arg(long)]
     verbose: bool,
 }
@@ -50,6 +54,12 @@ async fn main() -> Result<()> {
     }
     if let Some(http_port) = cli.http_port {
         config.http.port = http_port;
+    }
+    if cli.fullscreen {
+        config.video.fullscreen = true;
+    }
+    if cli.windowed {
+        config.video.fullscreen = false;
     }
 
     let interface_name = resolve_interface_name(config.network.interface_override())
@@ -125,7 +135,7 @@ async fn run_supervisor(
 
         let restart_reason = loop {
             tokio::select! {
-                _ = tokio::signal::ctrl_c() => {
+                _ = shutdown_signal() => {
                     info!("shutdown requested");
                     state.mark_stopping("rx shutting down").await;
                     if let Err(err) = pipeline.stop() {
@@ -157,6 +167,30 @@ async fn run_supervisor(
             config.recovery.restart_backoff_ms, restart_reason
         );
         tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)).await;
+    }
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        match signal(SignalKind::terminate()) {
+            Ok(mut terminate) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = terminate.recv() => {}
+                }
+            }
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
     }
 }
 
