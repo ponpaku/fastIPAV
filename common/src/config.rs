@@ -157,6 +157,10 @@ impl Default for RecoveryConfig {
 pub struct TxVideoConfig {
     #[serde(default)]
     pub source_element: String,
+    #[serde(default)]
+    pub source_caps: String,
+    #[serde(default)]
+    pub source_decoder_element: String,
     #[serde(default = "default_video_device")]
     pub device: String,
     #[serde(default = "default_width")]
@@ -177,6 +181,8 @@ impl Default for TxVideoConfig {
     fn default() -> Self {
         Self {
             source_element: String::new(),
+            source_caps: String::new(),
+            source_decoder_element: String::new(),
             device: default_video_device(),
             width: default_width(),
             height: default_height(),

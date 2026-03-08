@@ -192,9 +192,23 @@ PACKAGE_NAME="$(artifact_name "${VERSION}" "${ARCH}")"
 DOWNLOAD_URL="https://github.com/${REPO_SLUG}/releases/download/${VERSION}/${PACKAGE_NAME}"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
+LOCAL_PACKAGE="${REPO_ROOT}/dist/${PACKAGE_NAME}"
 
-log "downloading ${DOWNLOAD_URL}"
-curl -fL "${DOWNLOAD_URL}" -o "${TMP_DIR}/${PACKAGE_NAME}" || fail "failed to download release artifact"
+if [ -f "${LOCAL_PACKAGE}" ]; then
+  log "using local package ${LOCAL_PACKAGE}"
+  cp "${LOCAL_PACKAGE}" "${TMP_DIR}/${PACKAGE_NAME}"
+else
+  log "downloading ${DOWNLOAD_URL}"
+  if ! curl -fL "${DOWNLOAD_URL}" -o "${TMP_DIR}/${PACKAGE_NAME}"; then
+    if command -v gh >/dev/null 2>&1; then
+      log "curl download failed, trying gh release download"
+      gh release download "${VERSION}" -R "${REPO_SLUG}" -D "${TMP_DIR}" -p "${PACKAGE_NAME}" \
+        || fail "failed to download release artifact with curl and gh"
+    else
+      fail "failed to download release artifact"
+    fi
+  fi
+fi
 tar -xzf "${TMP_DIR}/${PACKAGE_NAME}" -C "${TMP_DIR}"
 
 PACKAGE_DIR="$(find "${TMP_DIR}" -mindepth 1 -maxdepth 1 -type d | head -n1)"

@@ -230,10 +230,23 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
     } else {
         config.video.encoder_element.clone()
     };
+    let source_caps = if config.video.source_caps.trim().is_empty() {
+        format!(
+            "video/x-raw,width={},height={},framerate={}/1",
+            config.video.width, config.video.height, config.video.fps
+        )
+    } else {
+        config.video.source_caps.clone()
+    };
+    let source_decoder = if config.video.source_decoder_element.trim().is_empty() {
+        String::new()
+    } else {
+        format!(" ! {}", config.video.source_decoder_element.trim())
+    };
     format!(
         concat!(
             "{source} ",
-            "! video/x-raw,width={width},height={height},framerate={fps}/1 ",
+            "! {source_caps}{source_decoder} ",
             "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ",
             "! videoconvert ",
             "! video/x-raw,format=I420 ",
@@ -243,9 +256,8 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
             "! udpsink host={group} port={port} auto-multicast=true ttl-mc={ttl} sync=false async=false{iface}"
         ),
         source = source,
-        width = config.video.width,
-        height = config.video.height,
-        fps = config.video.fps,
+        source_caps = source_caps,
+        source_decoder = source_decoder,
         encoder = encoder,
         bitrate_kbps = config.video.bitrate_kbps,
         gop = config.video.gop,

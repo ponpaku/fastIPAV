@@ -23,6 +23,8 @@ restart_backoff_ms = 1000
 monitor_interval_ms = 250
 
 [video]
+source_caps = "image/jpeg,width=1920,height=1080,framerate=30/1"
+source_decoder_element = "jpegdec"
 device = "/dev/video0"
 width = 1920
 height = 1080
