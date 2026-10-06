@@ -7,7 +7,7 @@ cd "${REPO_ROOT}"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/package-release.sh --version <tag> [--target <triple>] [--skip-build]
+Usage: scripts/package-release.sh --version <tag> [--target <triple>]
 
 Examples:
   bash scripts/package-release.sh --version v0.1.0
@@ -26,8 +26,6 @@ fail() {
 
 VERSION=""
 TARGET=""
-SKIP_BUILD=false
-
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --version)
@@ -37,10 +35,6 @@ while [ "$#" -gt 0 ]; do
     --target)
       TARGET="${2:-}"
       shift 2
-      ;;
-    --skip-build)
-      SKIP_BUILD=true
-      shift
       ;;
     -h|--help)
       usage
@@ -53,13 +47,77 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -n "${VERSION}" ] || fail "--version is required"
-case "${VERSION}" in
-  v[0-9]*)
+printf '%s\n' "${VERSION}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?
+WORKSPACE_VERSION="$(grep -m1 '^version = "' Cargo.toml | cut -d'"' -f2)"
+[ -n "${WORKSPACE_VERSION}" ] || fail "failed to read workspace version from Cargo.toml"
+[ "${VERSION#v}" = "${WORKSPACE_VERSION}" ] \
+  || fail "release tag ${VERSION} does not match workspace version ${WORKSPACE_VERSION}"
+
+HOST_TARGET="$(rustc -vV | sed -n 's/^host: //p')"
+if [ -z "${TARGET}" ]; then
+  TARGET="${HOST_TARGET}"
+fi
+
+if [ "${TARGET}" != "${HOST_TARGET}" ]; then
+  fail "cross-compiling release packages is not supported by this script; run it on a native ${TARGET} host or use the GitHub Release workflow"
+fi
+
+case "${TARGET}" in
+  x86_64-unknown-linux-gnu)
+    ARCH="x86_64"
+    ;;
+  aarch64-unknown-linux-gnu)
+    ARCH="aarch64"
     ;;
   *)
-    fail "--version must be a v-prefixed release tag such as v0.1.0"
+    fail "unsupported target triple: ${TARGET}"
     ;;
 esac
+
+log "building release binaries for ${TARGET}"
+cargo build --release --locked --target "${TARGET}"
+
+BIN_DIR="target/${TARGET}/release"
+[ -x "${BIN_DIR}/tx" ] || fail "missing binary: ${BIN_DIR}/tx"
+[ -x "${BIN_DIR}/rx" ] || fail "missing binary: ${BIN_DIR}/rx"
+
+PACKAGE_BASENAME="fastipav-${VERSION}-linux-${ARCH}"
+STAGE_DIR="$(mktemp -d)"
+trap 'rm -rf "${STAGE_DIR}"' EXIT
+PACKAGE_DIR="${STAGE_DIR}/${PACKAGE_BASENAME}"
+
+log "staging package in ${PACKAGE_DIR}"
+install -d "${PACKAGE_DIR}/bin" "${PACKAGE_DIR}/configs" "${PACKAGE_DIR}/systemd"
+install -m 0755 "${BIN_DIR}/tx" "${PACKAGE_DIR}/bin/tx"
+install -m 0755 "${BIN_DIR}/rx" "${PACKAGE_DIR}/bin/rx"
+install -m 0644 LICENSE "${PACKAGE_DIR}/LICENSE"
+cp configs/*.toml "${PACKAGE_DIR}/configs/"
+cp systemd/*.service "${PACKAGE_DIR}/systemd/"
+
+cat > "${PACKAGE_DIR}/manifest.txt" <<EOF
+name=${PACKAGE_BASENAME}
+version=${VERSION}
+target=${TARGET}
+arch=${ARCH}
+EOF
+
+mkdir -p dist
+ARCHIVE_PATH="dist/${PACKAGE_BASENAME}.tar.gz"
+CHECKSUM_PATH="dist/${PACKAGE_BASENAME}.sha256"
+
+log "creating ${ARCHIVE_PATH}"
+tar -C "${STAGE_DIR}" -czf "${ARCHIVE_PATH}" "${PACKAGE_BASENAME}"
+
+command -v sha256sum >/dev/null 2>&1 || fail "sha256sum is required to package releases"
+(
+  cd dist
+  sha256sum "${PACKAGE_BASENAME}.tar.gz" > "${PACKAGE_BASENAME}.sha256"
+)
+log "wrote checksum ${CHECKSUM_PATH}"
+
+log "package created: ${ARCHIVE_PATH}"
+ \
+  || fail "--version must be a release tag such as v0.1.0"
 
 WORKSPACE_VERSION="$(grep -m1 '^version = "' Cargo.toml | cut -d'"' -f2)"
 [ -n "${WORKSPACE_VERSION}" ] || fail "failed to read workspace version from Cargo.toml"
