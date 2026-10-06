@@ -296,6 +296,8 @@ impl Default for RxVideoConfig {
 pub struct TxAudioConfig {
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default)]
+    pub source_element: String,
     #[serde(default = "default_audio_device")]
     pub device: String,
     #[serde(default = "default_audio_sample_rate")]
@@ -314,6 +316,7 @@ impl Default for TxAudioConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            source_element: String::new(),
             device: default_audio_device(),
             sample_rate: default_audio_sample_rate(),
             channels: default_audio_channels(),
@@ -328,6 +331,8 @@ impl Default for TxAudioConfig {
 pub struct RxAudioConfig {
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default)]
+    pub sink_element: String,
     #[serde(default = "default_audio_device")]
     pub device: String,
     #[serde(default = "default_audio_sample_rate")]
@@ -352,6 +357,7 @@ impl Default for RxAudioConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            sink_element: String::new(),
             device: default_audio_device(),
             sample_rate: default_audio_sample_rate(),
             channels: default_audio_channels(),
@@ -427,6 +433,9 @@ impl TxConfig {
                 self.audio.buffer_time_us,
                 self.audio.latency_time_us,
             )?;
+            if self.audio.source_element.trim().is_empty() && self.audio.device.trim().is_empty() {
+                bail!("audio.device must not be empty when audio.source_element is not set");
+            }
         }
         Ok(())
     }
@@ -485,6 +494,9 @@ impl RxConfig {
                 self.audio.buffer_time_us,
                 self.audio.latency_time_us,
             )?;
+            if self.audio.sink_element.trim().is_empty() && self.audio.device.trim().is_empty() {
+                bail!("audio.device must not be empty when audio.sink_element is not set");
+            }
         }
         Ok(())
     }
