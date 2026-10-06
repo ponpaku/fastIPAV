@@ -1,6 +1,8 @@
 use anyhow::{bail, Result};
 use std::fs;
 
+const IFF_MULTICAST: u32 = 0x1000;
+
 pub fn resolve_interface_name(selection: Option<&str>) -> Result<Option<String>> {
     if let Some(explicit) = selection {
         let explicit = explicit.trim();
@@ -12,23 +14,37 @@ pub fn resolve_interface_name(selection: Option<&str>) -> Result<Option<String>>
         }
     }
 
-    let mut preferred = Vec::new();
-    let mut others = Vec::new();
+    let mut wired = Vec::new();
+    let mut wireless = Vec::new();
+    let mut physical = Vec::new();
 
     for name in list_interfaces()? {
-        if name == "lo" {
+        if name == "lo" || !interface_is_operational(&name) || !interface_supports_multicast(&name) {
             continue;
         }
+
         if name.starts_with("en") || name.starts_with("eth") {
-            preferred.push(name);
-        } else {
-            others.push(name);
+            wired.push(name);
+        } else if name.starts_with("wl") {
+            wireless.push(name);
+        } else if interface_is_physical(&name) {
+            physical.push(name);
         }
     }
 
-    preferred.sort();
-    others.sort();
-    Ok(preferred.into_iter().chain(others).next())
+    wired.sort();
+    wireless.sort();
+    physical.sort();
+
+    // Prefer an active wired AV path, then active Wi-Fi, then another physical
+    // multicast-capable interface. If none is available, leave the interface
+    // unspecified and let the kernel/GStreamer routing decision apply rather
+    // than pinning the pipeline to a disconnected or virtual device.
+    Ok(wired
+        .into_iter()
+        .chain(wireless)
+        .chain(physical)
+        .next())
 }
 
 fn list_interfaces() -> Result<Vec<String>> {
@@ -42,4 +58,23 @@ fn list_interfaces() -> Result<Vec<String>> {
 
 fn interface_exists(name: &str) -> bool {
     fs::metadata(format!("/sys/class/net/{}", name)).is_ok()
+}
+
+fn interface_is_operational(name: &str) -> bool {
+    let state = fs::read_to_string(format!("/sys/class/net/{}/operstate", name))
+        .unwrap_or_default();
+    matches!(state.trim(), "up" | "unknown")
+}
+
+fn interface_supports_multicast(name: &str) -> bool {
+    let flags = fs::read_to_string(format!("/sys/class/net/{}/flags", name))
+        .unwrap_or_default();
+    let flags = flags.trim().trim_start_matches("0x");
+    u32::from_str_radix(flags, 16)
+        .map(|value| value & IFF_MULTICAST != 0)
+        .unwrap_or(false)
+}
+
+fn interface_is_physical(name: &str) -> bool {
+    fs::metadata(format!("/sys/class/net/{}/device", name)).is_ok()
 }
