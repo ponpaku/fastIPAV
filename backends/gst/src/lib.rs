@@ -685,6 +685,26 @@ mod tests {
     }
 
     #[test]
+    fn shipped_pipeline_configs_parse() {
+        let config_dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs");
+
+        for name in ["tx.default.toml", "tx.pi.toml", "tx.smoketest.toml"] {
+            let config = TxConfig::load(config_dir.join(name))
+                .unwrap_or_else(|err| panic!("failed to load {name}: {err:#}"));
+            GstServicePipeline::for_tx(&config, Some("lo"))
+                .unwrap_or_else(|err| panic!("failed to parse {name}: {err:#}"));
+        }
+
+        for name in ["rx.default.toml", "rx.pi.toml", "rx.smoketest.toml"] {
+            let config = RxConfig::load(config_dir.join(name))
+                .unwrap_or_else(|err| panic!("failed to load {name}: {err:#}"));
+            GstServicePipeline::for_rx(&config, Some("lo"))
+                .unwrap_or_else(|err| panic!("failed to parse {name}: {err:#}"));
+        }
+    }
+
+    #[test]
     fn supported_linux_sink_fragments_parse() {
         init_gstreamer().unwrap();
 
