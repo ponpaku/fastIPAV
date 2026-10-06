@@ -7,10 +7,16 @@ pub fn resolve_interface_name(selection: Option<&str>) -> Result<Option<String>>
     if let Some(explicit) = selection {
         let explicit = explicit.trim();
         if !explicit.is_empty() && explicit != "auto" {
-            if interface_exists(explicit) {
-                return Ok(Some(explicit.to_string()));
+            if !interface_exists(explicit) {
+                bail!("requested interface {} does not exist", explicit);
             }
-            bail!("requested interface {} does not exist", explicit);
+            if !interface_is_operational(explicit) {
+                bail!("requested interface {} is not operational", explicit);
+            }
+            if explicit != "lo" && !interface_supports_multicast(explicit) {
+                bail!("requested interface {} does not support multicast", explicit);
+            }
+            return Ok(Some(explicit.to_string()));
         }
     }
 
@@ -33,7 +39,9 @@ pub fn resolve_interface_name(selection: Option<&str>) -> Result<Option<String>>
     candidates.dedup();
 
     match candidates.as_slice() {
-        [] => Ok(None),
+        [] => bail!(
+            "no active multicast-capable physical interface detected; set network.interface explicitly when using a non-physical interface"
+        ),
         [only] => Ok(Some(only.clone())),
         _ => bail!(
             "multiple active multicast interfaces detected ({}); set network.interface explicitly",
