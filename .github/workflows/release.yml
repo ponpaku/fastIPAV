@@ -17,6 +17,7 @@ jobs:
 
       - name: Install native and runtime dependencies
         run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update
           sudo apt-get install -y \
             curl \
@@ -59,6 +60,7 @@ jobs:
 
       - name: Install native dependencies
         run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update
           sudo apt-get install -y \
             libgstreamer1.0-dev \
