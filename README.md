@@ -136,7 +136,7 @@ gst-inspect-1.0 waylandsink
 
 補足:
 
-- `sdl2sink` が無い環境では、実装側で `waylandsink` / `ximagesink` / `autovideosink` に自動フォールバックする
+- `sdlvideosink` が無い環境では、実装側で `waylandsink` / `ximagesink` / `autovideosink` に自動フォールバックする
 - UVC 入力が見えているかは `ls -l /dev/video*` で確認する
 - 音声入出力は `arecord -l` `aplay -l` で確認する
 
