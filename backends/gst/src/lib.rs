@@ -666,3 +666,55 @@ fn preferred_linux_sink() -> LinuxSink {
 fn has_element(name: &str) -> bool {
     gst::ElementFactory::find(name).is_some()
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_pipeline_parses(description: &str) {
+        init_gstreamer().unwrap();
+        gst::parse::bin_from_description(description, true)
+            .unwrap_or_else(|err| panic!("pipeline did not parse: {description}: {err}"));
+    }
+
+    #[test]
+    fn default_tx_and_rx_pipelines_parse() {
+        GstServicePipeline::for_tx(&TxConfig::default(), None).unwrap();
+        GstServicePipeline::for_rx(&RxConfig::default(), None).unwrap();
+    }
+
+    #[test]
+    fn supported_linux_sink_fragments_parse() {
+        init_gstreamer().unwrap();
+
+        let candidates = [
+            (LinuxSink::Wayland, "waylandsink"),
+            (LinuxSink::Sdl, "sdlvideosink"),
+            (LinuxSink::XImage, "ximagesink"),
+            (LinuxSink::AutoVideo, "autovideosink"),
+        ];
+
+        for (sink, factory) in candidates {
+            if has_element(factory) {
+                let sink = render_linux_sink(sink, true, true, 25);
+                assert_pipeline_parses(&format!("videotestsrc ! videoconvert ! {sink}"));
+            }
+        }
+    }
+
+    #[test]
+    fn kms_sink_fragment_parses_when_available() {
+        init_gstreamer().unwrap();
+        if has_element("kmssink") {
+            let sink = render_sink(
+                &RendererKind::KmsDrm,
+                &PlatformProfile::RaspberryPi,
+                true,
+                true,
+                25,
+            );
+            assert_pipeline_parses(&format!("videotestsrc ! videoconvert ! {sink}"));
+        }
+    }
+}
