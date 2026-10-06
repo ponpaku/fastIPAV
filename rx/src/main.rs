@@ -89,7 +89,7 @@ async fn main() -> Result<()> {
     }
     seed_estimated_metrics(&config, &state).await;
     state
-        .add_note("phase1/2 receiver supervisor enabled")
+        .add_note("receiver supervisor enabled")
         .await;
     if matches!(config.video.renderer.resolve(&config.platform.profile), RendererKind::KmsDrm) {
         state
