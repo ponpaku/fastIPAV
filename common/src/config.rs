@@ -510,6 +510,12 @@ impl RxConfig {
             if self.audio.sink_element.trim().is_empty() && self.audio.device.trim().is_empty() {
                 bail!("audio.device must not be empty when audio.sink_element is not set");
             }
+            if self.audio.late_threshold_ms == 0 {
+                bail!("audio.late_threshold_ms must be greater than zero when audio is enabled");
+            }
+            if self.audio.sync_tolerance_ms == 0 {
+                bail!("audio.sync_tolerance_ms must be greater than zero when audio is enabled");
+            }
         }
         Ok(())
     }
