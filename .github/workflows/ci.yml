@@ -68,3 +68,25 @@ jobs:
 
       - name: Run loopback smoke test
         run: bash scripts/smoke-test.sh
+
+      - name: Test release packaging and local install
+        if: matrix.name == 'ubuntu-22.04-x86_64'
+        run: |
+          ./scripts/package-release.sh --version v0.1.0
+
+          install_root="$(mktemp -d)"
+          ./scripts/install.sh \
+            --version v0.1.0 \
+            --prefix "${install_root}/usr/local" \
+            --config-dir "${install_root}/etc/avoverip" \
+            --systemd-dir "${install_root}/systemd"
+
+          test -x "${install_root}/usr/local/bin/tx"
+          test -x "${install_root}/usr/local/bin/rx"
+          test -f "${install_root}/usr/local/share/fastipav/LICENSE"
+          test -f "${install_root}/etc/avoverip/tx.toml"
+          test -f "${install_root}/etc/avoverip/rx.toml"
+          grep -F "ExecStart=${install_root}/usr/local/bin/tx --config ${install_root}/etc/avoverip/tx.toml" \
+            "${install_root}/systemd/avoverip-tx.service"
+          grep -F "ExecStart=${install_root}/usr/local/bin/rx --config ${install_root}/etc/avoverip/rx.toml" \
+            "${install_root}/systemd/avoverip-rx.service"
