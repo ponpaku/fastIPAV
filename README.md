@@ -11,7 +11,7 @@
 
 ## 配布方針
 
-このリポジトリは、通常運用では「ソースを clone してローカルでビルドする」よりも、`GitHub Releases` に置いたビルド済みアーカイブを `scripts/install.sh` で取得して配置する使い方を想定している。
+このリポジトリは、通常運用では「ソースを clone してローカルでビルドする」よりも、`GitHub Releases` に置いたビルド済みアーカイブを `scripts/install.sh` で取得して配置する使い方を想定している。installer は同梱の SHA-256 チェックサムを検証してから展開する。
 
 想定フロー:
 
@@ -209,6 +209,14 @@ curl -fsS http://127.0.0.1:8082/stats
 ./tools/fetch-stats.sh 127.0.0.1:8082
 ```
 
+デバイスを使わず、loopback multicast で tx/rx の実パイプラインを確認するスモークテスト:
+
+```bash
+bash scripts/smoke-test.sh
+```
+
+設定ファイルは起動時に検証される。multicast address、RTP port / payload type、映像サイズ・fps、HTTP bind、audio parameter などが不正な場合は pipeline 構築前にエラーで終了する。
+
 `/stats` の主な項目:
 
 - `estimated_capture_to_display_ms`
@@ -221,7 +229,9 @@ curl -fsS http://127.0.0.1:8082/stats
 
 ## release 生成
 
-release アーカイブは `scripts/package-release.sh` で作る。
+`v*` タグを push すると GitHub Actions が x86_64 / aarch64 のネイティブ runner で release package を生成し、GitHub Release に `.tar.gz` と `.sha256` を公開する。
+
+手元で作る場合は `scripts/package-release.sh` を使う。
 
 ホストと同じ architecture 向け:
 
@@ -267,3 +277,17 @@ cargo build
 - `capture-to-display` は現状、設定値ベースの初期推定を返す
 - 実機の遅延検証と UVC 入力確認は別途必要
 - Raspberry Pi / Linux PC 向けの hardware codec 最適化は今後の調整余地がある
+
+
+## CI
+
+Pull Request と `main` への push では、GitHub Actions で以下を実行する。
+
+- shell script の構文検証
+- workspace 全体の `cargo check`
+- unit test
+- GStreamer を使った tx/rx loopback smoke test
+
+## License
+
+MIT License。詳細は `LICENSE` を参照。
