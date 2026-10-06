@@ -125,13 +125,16 @@ impl GstServicePipeline {
                         )))
                     }
                     gst::MessageView::Warning(warn) => {
+                        let source = source_name(&message);
                         let text = format!(
                             "{} warning from {}: {}",
                             pipeline_name,
-                            source_name(&message),
+                            source,
                             warn.error()
                         );
-                        if text.to_ascii_lowercase().contains("underrun") {
+                        if text.to_ascii_lowercase().contains("underrun")
+                            && is_audio_source_name(&source)
+                        {
                             Some(PipelineEvent::AudioUnderrun)
                         } else {
                             Some(PipelineEvent::Warning(text))
@@ -143,7 +146,10 @@ impl GstServicePipeline {
                     gst::MessageView::Element(element) => {
                         if let Some(structure) = element.structure() {
                             let name = structure.name().to_ascii_lowercase();
-                            if name.contains("underrun") || name.contains("xrun") {
+                            let source = source_name(&message);
+                            if (name.contains("underrun") || name.contains("xrun"))
+                                && is_audio_source_name(&source)
+                            {
                                 Some(PipelineEvent::AudioUnderrun)
                             } else {
                                 None
@@ -551,6 +557,11 @@ fn source_name(message: &gst::Message) -> String {
         .src()
         .map(|src| src.path_string().to_string())
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn is_audio_source_name(source: &str) -> bool {
+    let source = source.to_ascii_lowercase();
+    source.contains("audio") || source.contains("alsa")
 }
 
 fn select_h264_decoder(config: &RxConfig) -> String {
