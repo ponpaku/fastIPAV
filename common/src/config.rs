@@ -1,6 +1,6 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{fs, net::SocketAddr, path::Path};
+use std::{fs, net::{Ipv4Addr, SocketAddr}, path::Path};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -109,6 +109,35 @@ impl NetworkConfig {
             explicit => Some(explicit),
         }
     }
+
+    fn validate(&self, audio_enabled: bool) -> Result<()> {
+        let multicast_group: Ipv4Addr = self
+            .multicast_group
+            .parse()
+            .with_context(|| format!("invalid IPv4 multicast group {}", self.multicast_group))?;
+        if !multicast_group.is_multicast() {
+            bail!("network.multicast_group must be an IPv4 multicast address");
+        }
+        if self.video_port == 0 {
+            bail!("network.video_port must be greater than zero");
+        }
+        if audio_enabled && self.audio_port == 0 {
+            bail!("network.audio_port must be greater than zero when audio is enabled");
+        }
+        if audio_enabled && self.video_port == self.audio_port {
+            bail!("network.video_port and network.audio_port must differ when audio is enabled");
+        }
+        if self.video_payload_type > 127 {
+            bail!("network.video_payload_type must be in the RTP range 0..=127");
+        }
+        if audio_enabled && self.audio_payload_type > 127 {
+            bail!("network.audio_payload_type must be in the RTP range 0..=127");
+        }
+        if self.rtp_mtu == 0 {
+            bail!("network.rtp_mtu must be greater than zero");
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,6 +163,13 @@ impl HttpConfig {
             .parse()
             .with_context(|| format!("invalid http bind address {}:{}", self.bind_addr, self.port))
     }
+
+    fn validate(&self) -> Result<()> {
+        if self.port == 0 {
+            bail!("http.port must be greater than zero");
+        }
+        self.socket_addr().map(|_| ())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +186,18 @@ impl Default for RecoveryConfig {
             restart_backoff_ms: default_restart_backoff_ms(),
             monitor_interval_ms: default_monitor_interval_ms(),
         }
+    }
+}
+
+impl RecoveryConfig {
+    fn validate(&self) -> Result<()> {
+        if self.restart_backoff_ms == 0 {
+            bail!("recovery.restart_backoff_ms must be greater than zero");
+        }
+        if self.monitor_interval_ms == 0 {
+            bail!("recovery.monitor_interval_ms must be greater than zero");
+        }
+        Ok(())
     }
 }
 
@@ -342,7 +390,36 @@ impl Default for TxConfig {
 
 impl TxConfig {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
-        load_toml(path)
+        let config: Self = load_toml(path)?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        validate_node_name(&self.node_name)?;
+        self.network.validate(self.audio.enabled)?;
+        self.http.validate()?;
+        self.recovery.validate()?;
+        validate_video_dimensions(self.video.width, self.video.height, self.video.fps)?;
+
+        if self.video.bitrate_kbps == 0 {
+            bail!("video.bitrate_kbps must be greater than zero");
+        }
+        if self.video.gop == 0 {
+            bail!("video.gop must be greater than zero");
+        }
+        if self.video.source_element.trim().is_empty() && self.video.device.trim().is_empty() {
+            bail!("video.device must not be empty when video.source_element is not set");
+        }
+        if self.audio.enabled {
+            validate_audio(
+                self.audio.sample_rate,
+                self.audio.channels,
+                self.audio.buffer_time_us,
+                self.audio.latency_time_us,
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -380,8 +457,66 @@ impl Default for RxConfig {
 
 impl RxConfig {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
-        load_toml(path)
+        let config: Self = load_toml(path)?;
+        config.validate()?;
+        Ok(config)
     }
+
+    pub fn validate(&self) -> Result<()> {
+        validate_node_name(&self.node_name)?;
+        self.network.validate(self.audio.enabled)?;
+        self.http.validate()?;
+        self.recovery.validate()?;
+        validate_video_dimensions(self.video.width, self.video.height, self.video.fps)?;
+
+        if self.audio.enabled {
+            validate_audio(
+                self.audio.sample_rate,
+                self.audio.channels,
+                self.audio.buffer_time_us,
+                self.audio.latency_time_us,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn validate_node_name(node_name: &str) -> Result<()> {
+    if node_name.trim().is_empty() {
+        bail!("node_name must not be empty");
+    }
+    Ok(())
+}
+
+fn validate_video_dimensions(width: u32, height: u32, fps: u32) -> Result<()> {
+    if width == 0 || height == 0 {
+        bail!("video width and height must be greater than zero");
+    }
+    if fps == 0 {
+        bail!("video.fps must be greater than zero");
+    }
+    Ok(())
+}
+
+fn validate_audio(
+    sample_rate: u32,
+    channels: u32,
+    buffer_time_us: i64,
+    latency_time_us: i64,
+) -> Result<()> {
+    if sample_rate == 0 {
+        bail!("audio.sample_rate must be greater than zero");
+    }
+    if channels == 0 {
+        bail!("audio.channels must be greater than zero");
+    }
+    if buffer_time_us <= 0 {
+        bail!("audio.buffer_time_us must be greater than zero");
+    }
+    if latency_time_us <= 0 {
+        bail!("audio.latency_time_us must be greater than zero");
+    }
+    Ok(())
 }
 
 fn load_toml<T, P>(path: P) -> Result<T>
@@ -548,4 +683,38 @@ fn default_audio_latency_time_us() -> i64 {
 
 fn default_use_driver_timestamps() -> bool {
     true
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_configs_are_valid() {
+        TxConfig::default().validate().unwrap();
+        RxConfig::default().validate().unwrap();
+    }
+
+    #[test]
+    fn rejects_unicast_group() {
+        let mut config = TxConfig::default();
+        config.network.multicast_group = "192.168.1.10".to_string();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_zero_fps() {
+        let mut config = RxConfig::default();
+        config.video.fps = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_shared_rtp_port_when_audio_is_enabled() {
+        let mut config = TxConfig::default();
+        config.audio.enabled = true;
+        config.network.audio_port = config.network.video_port;
+        assert!(config.validate().is_err());
+    }
 }
