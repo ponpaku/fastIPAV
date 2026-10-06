@@ -36,7 +36,8 @@ sync = false
 max_lateness_ms = 25
 
 [audio]
-enabled = false
+enabled = true
+sink_element = "fakesink sync=false async=false"
 device = "default"
 sample_rate = 48000
 channels = 2
