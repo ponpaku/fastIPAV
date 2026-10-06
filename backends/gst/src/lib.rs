@@ -55,6 +55,11 @@ pub struct PipelineDescriptions {
     pub renderer: Option<String>,
 }
 
+pub struct PipelineEvents {
+    pub bus: mpsc::UnboundedReceiver<PipelineEvent>,
+    pub media: mpsc::Receiver<PipelineEvent>,
+}
+
 #[derive(Debug, Copy, Clone)]
 enum MediaKind {
     Video,
@@ -87,15 +92,16 @@ impl GstServicePipeline {
         &self.descriptions
     }
 
-    pub fn start(&mut self) -> Result<mpsc::Receiver<PipelineEvent>> {
+    pub fn start(&mut self) -> Result<PipelineEvents> {
         let bus = self
             .pipeline
             .bus()
             .ok_or_else(|| anyhow!("{} pipeline bus is not available", self.name))?;
-        let (tx, rx) = mpsc::channel(EVENT_CHANNEL_CAPACITY);
-        self.install_buffer_probe("video_monitor", MediaKind::Video, tx.clone())?;
+        let (bus_tx, bus_rx) = mpsc::unbounded_channel();
+        let (media_tx, media_rx) = mpsc::channel(EVENT_CHANNEL_CAPACITY);
+        self.install_buffer_probe("video_monitor", MediaKind::Video, media_tx.clone())?;
         if self.descriptions.audio.is_some() {
-            self.install_buffer_probe("audio_monitor", MediaKind::Audio, tx.clone())?;
+            self.install_buffer_probe("audio_monitor", MediaKind::Audio, media_tx.clone())?;
         }
 
         self.pipeline
@@ -175,7 +181,7 @@ impl GstServicePipeline {
 
                 if let Some(event) = event {
                     let should_break = event.requires_restart();
-                    if tx.blocking_send(event).is_err() {
+                    if bus_tx.send(event).is_err() {
                         break;
                     }
                     if should_break {
@@ -185,7 +191,10 @@ impl GstServicePipeline {
             }
         });
         self.bus_thread = Some(bus_thread);
-        Ok(rx)
+        Ok(PipelineEvents {
+            bus: bus_rx,
+            media: media_rx,
+        })
     }
 
     fn install_buffer_probe(
@@ -216,7 +225,7 @@ impl GstServicePipeline {
             // Buffer events are heartbeats/counters. Never block a GStreamer
             // streaming thread; if the consumer is temporarily behind, dropping
             // a heartbeat is preferable to unbounded memory growth or pipeline
-            // backpressure. Critical bus events use blocking_send above.
+            // backpressure. Critical bus events use their own low-volume channel.
             let _ = sender.try_send(event);
             gst::PadProbeReturn::Ok
         })
