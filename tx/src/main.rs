@@ -137,9 +137,12 @@ async fn run_supervisor(
             tokio::time::interval(Duration::from_millis(config.recovery.monitor_interval_ms));
         watchdog.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+        let shutdown = shutdown_signal();
+        tokio::pin!(shutdown);
+
         let restart_reason = loop {
             tokio::select! {
-                _ = shutdown_signal() => {
+                _ = &mut shutdown => {
                     info!("shutdown requested");
                     state.mark_stopping("tx shutting down").await;
                     if let Err(err) = pipeline.stop() {
