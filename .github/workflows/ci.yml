@@ -18,28 +18,28 @@ jobs:
         include:
           - name: ubuntu-24.04-x86_64
             runner: ubuntu-24.04
+            image: ubuntu:24.04
           - name: ubuntu-22.04-x86_64
-            runner: ubuntu-22.04
+            runner: ubuntu-24.04
+            image: ubuntu:22.04
           - name: ubuntu-22.04-arm64
-            runner: ubuntu-22.04-arm
+            runner: ubuntu-24.04-arm
+            image: ubuntu:22.04
     runs-on: ${{ matrix.runner }}
+    container:
+      image: ${{ matrix.image }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Install native dependencies
+      - name: Install build and runtime dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          if [[ "${{ matrix.runner }}" == ubuntu-22.04* ]]; then
-            # The hosted Jammy image preinstalls libunwind-14-dev, which
-            # conflicts with libunwind-dev required by libgstreamer1.0-dev.
-            sudo apt-get remove -y libunwind-14-dev || true
-          fi
-          sudo apt-get update
-          if [[ "${{ matrix.runner }}" == ubuntu-22.04* ]]; then
-            sudo apt-get install -y libunwind-dev
-          fi
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            ca-certificates \
             curl \
+            git \
+            pkg-config \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-tools \
@@ -49,10 +49,13 @@ jobs:
             gstreamer1.0-plugins-ugly \
             gstreamer1.0-libav
 
-      - name: Select stable Rust
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
 
       - name: Validate shell scripts
         run: bash -n scripts/*.sh tools/*.sh
