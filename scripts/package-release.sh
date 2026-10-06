@@ -53,6 +53,18 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -n "${VERSION}" ] || fail "--version is required"
+case "${VERSION}" in
+  v[0-9]*)
+    ;;
+  *)
+    fail "--version must be a v-prefixed release tag such as v0.1.0"
+    ;;
+esac
+
+WORKSPACE_VERSION="$(grep -m1 '^version = "' Cargo.toml | cut -d'"' -f2)"
+[ -n "${WORKSPACE_VERSION}" ] || fail "failed to read workspace version from Cargo.toml"
+[ "${VERSION#v}" = "${WORKSPACE_VERSION}" ] \
+  || fail "release tag ${VERSION} does not match workspace version ${WORKSPACE_VERSION}"
 
 if [ -z "${TARGET}" ]; then
   TARGET="$(rustc -vV | sed -n 's/^host: //p')"
