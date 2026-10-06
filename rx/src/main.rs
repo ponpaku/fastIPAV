@@ -150,9 +150,6 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         let started = Instant::now();
         let mut last_video_buffer = started;
         let mut last_audio_buffer = started;
-        let mut last_video_pts_ns: Option<u64> = None;
-        let mut last_audio_pts_ns: Option<u64> = None;
-        let mut av_sync_out_of_tolerance = false;
         let mut video_ready = false;
         let mut audio_ready = !config.audio.enabled;
         let mut service_ready = false;
@@ -209,57 +206,21 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                         break "pipeline event channel closed".to_string();
                     };
                     match &event {
-                        PipelineEvent::VideoBuffer { pts_ns } => {
+                        PipelineEvent::VideoBuffer => {
                             last_video_buffer = Instant::now();
-                            if let Some(pts_ns) = pts_ns {
-                                last_video_pts_ns = Some(*pts_ns);
-                            }
                             if !video_ready {
                                 video_ready = true;
                                 info!("rx received first video buffer");
                             }
                         }
-                        PipelineEvent::AudioBuffer { pts_ns } => {
+                        PipelineEvent::AudioBuffer => {
                             last_audio_buffer = Instant::now();
-                            if let Some(pts_ns) = pts_ns {
-                                last_audio_pts_ns = Some(*pts_ns);
-                            }
                             if !audio_ready {
                                 audio_ready = true;
                                 info!("rx received first audio buffer");
                             }
                         }
                         _ => {}
-                    }
-                    if config.audio.enabled {
-                        if let (Some(video_pts_ns), Some(audio_pts_ns)) =
-                            (last_video_pts_ns, last_audio_pts_ns)
-                        {
-                            let offset_ms =
-                                (audio_pts_ns as f64 - video_pts_ns as f64) / 1_000_000.0;
-                            state.set_audio_offset(offset_ms).await;
-                            state.set_av_sync(offset_ms).await;
-
-                            let out_of_tolerance =
-                                offset_ms.abs() > config.audio.sync_tolerance_ms as f64;
-                            if out_of_tolerance && !av_sync_out_of_tolerance {
-                                state
-                                    .add_note(format!(
-                                        "rx observed A/V timestamp offset {:.1} ms exceeds configured tolerance {} ms",
-                                        offset_ms,
-                                        config.audio.sync_tolerance_ms
-                                    ))
-                                    .await;
-                            } else if !out_of_tolerance && av_sync_out_of_tolerance {
-                                state
-                                    .add_note(format!(
-                                        "rx observed A/V timestamp offset returned within {} ms tolerance",
-                                        config.audio.sync_tolerance_ms
-                                    ))
-                                    .await;
-                            }
-                            av_sync_out_of_tolerance = out_of_tolerance;
-                        }
                     }
                     if !service_ready && video_ready && audio_ready {
                         service_ready = true;
@@ -343,11 +304,11 @@ async fn handle_rx_event(state: &SharedServiceState, event: &PipelineEvent) -> b
                 .await;
             false
         }
-        PipelineEvent::VideoBuffer { .. } => {
+        PipelineEvent::VideoBuffer => {
             state.bump_frames_total().await;
             false
         }
-        PipelineEvent::AudioBuffer { .. } => {
+        PipelineEvent::AudioBuffer => {
             state.bump_audio_chunks_total().await;
             false
         }
@@ -372,8 +333,16 @@ async fn seed_estimated_metrics(config: &RxConfig, state: &SharedServiceState) {
             config.audio.jitter_latency_ms as f64 - config.video.jitter_latency_ms as f64;
         state.set_audio_offset(audio_offset).await;
         state.set_av_sync(audio_offset).await;
+        if audio_offset.abs() > config.audio.sync_tolerance_ms as f64 {
+            state
+                .add_note(format!(
+                    "configured audio/video jitter offset {:.1} ms exceeds sync tolerance {} ms",
+                    audio_offset, config.audio.sync_tolerance_ms
+                ))
+                .await;
+        }
         state
-            .add_note("capture-to-display and audio offset are seeded from configured buffers until media timestamps arrive")
+            .add_note("A/V offset is a configuration-based estimate; independent RTP streams are not sender-clock synchronized")
             .await;
     } else {
         state
