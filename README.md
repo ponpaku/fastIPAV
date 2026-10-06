@@ -206,7 +206,7 @@ curl -fsS http://127.0.0.1:8082/healthz
 ```bash
 curl -fsS http://127.0.0.1:8081/stats
 curl -fsS http://127.0.0.1:8082/stats
-./tools/fetch-stats.sh 127.0.0.1:8082
+bash tools/fetch-stats.sh 127.0.0.1:8082
 ```
 
 デバイスを使わず、loopback multicast で tx/rx の実パイプラインを確認するスモークテスト:
