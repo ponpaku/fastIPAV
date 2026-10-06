@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{fs, net::{Ipv4Addr, SocketAddr}, path::Path};
+use std::{fs, net::{IpAddr, Ipv4Addr, SocketAddr}, path::Path};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -165,9 +165,11 @@ impl Default for HttpConfig {
 
 impl HttpConfig {
     pub fn socket_addr(&self) -> Result<SocketAddr> {
-        format!("{}:{}", self.bind_addr, self.port)
+        let ip: IpAddr = self
+            .bind_addr
             .parse()
-            .with_context(|| format!("invalid http bind address {}:{}", self.bind_addr, self.port))
+            .with_context(|| format!("invalid HTTP bind IP address {}", self.bind_addr))?;
+        Ok(SocketAddr::new(ip, self.port))
     }
 
     fn validate(&self) -> Result<()> {
@@ -738,6 +740,15 @@ mod tests {
     fn default_configs_are_valid() {
         TxConfig::default().validate().unwrap();
         RxConfig::default().validate().unwrap();
+    }
+
+    #[test]
+    fn supports_ipv6_http_bind_address() {
+        let config = HttpConfig {
+            bind_addr: "::1".to_string(),
+            port: 8080,
+        };
+        assert_eq!(config.socket_addr().unwrap().to_string(), "[::1]:8080");
     }
 
     #[test]
