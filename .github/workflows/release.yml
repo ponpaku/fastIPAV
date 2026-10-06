@@ -10,18 +10,21 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:22.04
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Install native and runtime dependencies
+      - name: Install build and runtime dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get remove -y libunwind-14-dev || true
-          sudo apt-get update
-          sudo apt-get install -y libunwind-dev
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            ca-certificates \
             curl \
+            git \
+            pkg-config \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-tools \
@@ -31,10 +34,13 @@ jobs:
             gstreamer1.0-plugins-ugly \
             gstreamer1.0-libav
 
-      - name: Select stable Rust
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
 
       - name: Verify release source
         run: |
@@ -49,29 +55,37 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            runner: ubuntu-22.04
+            runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
           - arch: aarch64
-            runner: ubuntu-22.04-arm
+            runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
+    container:
+      image: ubuntu:22.04
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Install native dependencies
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get remove -y libunwind-14-dev || true
-          sudo apt-get update
-          sudo apt-get install -y libunwind-dev
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            ca-certificates \
+            curl \
+            git \
+            pkg-config \
+            tar \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev
 
-      - name: Select stable Rust
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
 
       - name: Build release package
         run: |
@@ -90,7 +104,7 @@ jobs:
 
   publish:
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Download package artifacts
         uses: actions/download-artifact@v4
