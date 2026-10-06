@@ -598,7 +598,7 @@ fn select_h264_decoder(config: &RxConfig) -> String {
 fn preferred_h264_decoder(profile: &PlatformProfile) -> String {
     match profile {
         PlatformProfile::RaspberryPi => {
-            let candidates: &[&str] = if is_raspberry_pi_5() {
+            let candidates: &[&str] = if is_raspberry_pi_5_family() {
                 &["avdec_h264", "openh264dec", "decodebin"]
             } else {
                 &["v4l2h264dec", "avdec_h264", "openh264dec", "decodebin"]
@@ -687,11 +687,14 @@ fn has_element(name: &str) -> bool {
     gst::ElementFactory::find(name).is_some()
 }
 
-fn is_raspberry_pi_5() -> bool {
+fn is_raspberry_pi_5_family() -> bool {
     fs::read("/proc/device-tree/model")
         .ok()
         .and_then(|bytes| String::from_utf8(bytes).ok())
-        .is_some_and(|model| model.trim_end_matches('\0').contains("Raspberry Pi 5"))
+        .is_some_and(|model| {
+            let model = model.trim_end_matches('\0');
+            model.contains("Raspberry Pi 5") || model.contains("Compute Module 5")
+        })
 }
 
 #[cfg(test)]
