@@ -63,6 +63,29 @@ wait_for_health() {
   return 1
 }
 
+wait_for_unhealthy() {
+  local role="$1"
+  local url="$2"
+  local pid="$3"
+  local status=""
+
+  for _ in $(seq 1 60); do
+    if ! kill -0 "${pid}" 2>/dev/null; then
+      printf '[smoke-test] %s exited while waiting for unhealthy state\n' "${role}" >&2
+      return 1
+    fi
+    status="$(curl -sS -o /dev/null -w '%{http_code}' "${url}" 2>/dev/null || true)"
+    if [ "${status}" = "503" ]; then
+      printf '[smoke-test] %s reported unhealthy after media loss\n' "${role}"
+      return 0
+    fi
+    sleep 0.2
+  done
+
+  printf '[smoke-test] timed out waiting for %s to report media loss\n' "${role}" >&2
+  return 1
+}
+
 command -v cargo >/dev/null 2>&1 || {
   printf '[smoke-test] cargo is required\n' >&2
   exit 1
@@ -106,10 +129,27 @@ printf '%s' "${RX_STATS}" | grep -Eq '"audio_chunks_total":[1-9][0-9]*' || {
   exit 1
 }
 
+# Verify that an established receiver detects media loss, restarts, and recovers.
+kill -TERM "${tx_pid}"
+wait "${tx_pid}"
+tx_pid=""
+
+wait_for_unhealthy "rx" "http://127.0.0.1:18082/healthz" "${rx_pid}"
+RX_STATS="$(curl -fsS "http://127.0.0.1:18082/stats")"
+printf '%s' "${RX_STATS}" | grep -Eq '"pipeline_restarts":[1-9][0-9]*' || {
+  printf '[smoke-test] rx did not report a pipeline restart after media loss\n' >&2
+  exit 1
+}
+
+"${TX_BIN}" --config configs/tx.smoketest.toml >"${TX_LOG}" 2>&1 &
+tx_pid=$!
+wait_for_health "tx" "http://127.0.0.1:18081/healthz" "${tx_pid}"
+wait_for_health "rx" "http://127.0.0.1:18082/healthz" "${rx_pid}"
+
 kill -TERM "${tx_pid}" "${rx_pid}"
 wait "${tx_pid}"
 wait "${rx_pid}"
 tx_pid=""
 rx_pid=""
 
-printf '[smoke-test] tx/rx loopback smoke test passed with actual video and audio buffers\n'
+printf '[smoke-test] tx/rx media flow, stall detection, and recovery passed\n'
