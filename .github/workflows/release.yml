@@ -89,7 +89,7 @@ jobs:
 
       - name: Build release package
         run: |
-          ./scripts/package-release.sh \
+          bash scripts/package-release.sh \
             --version "${GITHUB_REF_NAME}" \
             --target "${{ matrix.target }}"
 
