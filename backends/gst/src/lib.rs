@@ -553,25 +553,12 @@ fn render_sink(
         RendererKind::Sdl => {
             render_linux_sink(preferred_linux_sink(), fullscreen, sync, max_lateness_ms)
         }
-        RendererKind::KmsDrm => {
-            if has_element("kmssink") {
-                format!(
-                    "kmssink sync={} force-modesetting={} qos=true max-lateness={}",
-                    sync_value,
-                    if fullscreen { "true" } else { "false" },
-                    max_lateness_ns
-                )
-            } else {
-                // Fall back to the Linux desktop sink path when KMS is unavailable.
-                render_sink(
-                    &RendererKind::Sdl,
-                    &PlatformProfile::LinuxPc,
-                    fullscreen,
-                    sync,
-                    max_lateness_ms,
-                )
-            }
-        }
+        RendererKind::KmsDrm => format!(
+            "kmssink sync={} force-modesetting={} qos=true max-lateness={}",
+            sync_value,
+            if fullscreen { "true" } else { "false" },
+            max_lateness_ns
+        ),
         RendererKind::Auto => unreachable!("renderer auto is resolved before sink selection"),
     }
 }
