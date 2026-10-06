@@ -450,31 +450,12 @@ fn render_sink(
     let sync_value = if sync { "true" } else { "false" };
     let max_lateness_ns = (max_lateness_ms as u64) * 1_000_000;
     match renderer.resolve(profile) {
-        RendererKind::Sdl => match preferred_linux_sink() {
-            LinuxSink::Sdl2 => format!(
-                "sdl2sink sync={} fullscreen={} qos=true max-lateness={}",
-                sync_value,
-                if fullscreen { "true" } else { "false" },
-                max_lateness_ns
-            ),
-            LinuxSink::Wayland => format!(
-                "waylandsink sync={} fullscreen={} qos=true max-lateness={}",
-                sync_value,
-                if fullscreen { "true" } else { "false" },
-                max_lateness_ns
-            ),
-            LinuxSink::XImage => format!(
-                "ximagesink sync={} qos=true max-lateness={}",
-                sync_value,
-                max_lateness_ns
-            ),
-            LinuxSink::AutoVideo => format!(
-                "autovideosink sync={} qos=true max-lateness={}",
-                sync_value,
-                max_lateness_ns
-            ),
-            LinuxSink::Fake => "fakesink sync=false async=false".to_string(),
-        },
+        RendererKind::Sdl => render_linux_sink(
+            preferred_linux_sink(),
+            fullscreen,
+            sync,
+            max_lateness_ms,
+        ),
         RendererKind::KmsDrm => {
             if has_element("kmssink") {
                 format!(
@@ -545,7 +526,38 @@ enum LinuxSink {
     Wayland,
     XImage,
     AutoVideo,
-    Fake,
+}
+
+fn render_linux_sink(
+    sink: LinuxSink,
+    fullscreen: bool,
+    sync: bool,
+    max_lateness_ms: u32,
+) -> String {
+    let sync_value = if sync { "true" } else { "false" };
+    let max_lateness_ns = (max_lateness_ms as u64) * 1_000_000;
+    match sink {
+        LinuxSink::Sdl2 => format!(
+            "sdl2sink sync={} fullscreen={} qos=true max-lateness={}",
+            sync_value,
+            if fullscreen { "true" } else { "false" },
+            max_lateness_ns
+        ),
+        LinuxSink::Wayland => format!(
+            "waylandsink sync={} fullscreen={} qos=true max-lateness={}",
+            sync_value,
+            if fullscreen { "true" } else { "false" },
+            max_lateness_ns
+        ),
+        LinuxSink::XImage => format!(
+            "ximagesink sync={} qos=true max-lateness={}",
+            sync_value,
+            max_lateness_ns
+        ),
+        // autovideosink is a GstBin, not a GstBaseSink, so it does not expose
+        // sync/qos/max-lateness itself. Its selected child sink owns those.
+        LinuxSink::AutoVideo => "autovideosink".to_string(),
+    }
 }
 
 fn preferred_linux_sink() -> LinuxSink {
@@ -558,10 +570,9 @@ fn preferred_linux_sink() -> LinuxSink {
     if has_element("ximagesink") && env::var_os("DISPLAY").is_some() {
         return LinuxSink::XImage;
     }
-    if has_element("autovideosink") {
-        return LinuxSink::AutoVideo;
-    }
-    LinuxSink::Fake
+    // Do not silently fall back to fakesink here. A receiver that cannot
+    // render must fail visibly rather than report healthy while discarding video.
+    LinuxSink::AutoVideo
 }
 
 fn has_element(name: &str) -> bool {
