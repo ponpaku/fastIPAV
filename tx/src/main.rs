@@ -252,9 +252,14 @@ async fn handle_tx_event(state: &SharedServiceState, event: &PipelineEvent) -> b
             false
         }
         PipelineEvent::Warning(message) => {
+            let lower = message.to_ascii_lowercase();
             state.add_note(message.clone()).await;
-            if message.to_ascii_lowercase().contains("dropped") {
-                state.bump_dropped_frames().await;
+            if lower.contains("dropped") {
+                if lower.contains("audio") || lower.contains("alsa") {
+                    state.bump_dropped_audio_chunks().await;
+                } else {
+                    state.bump_dropped_frames().await;
+                }
             }
             false
         }
