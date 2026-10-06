@@ -55,19 +55,20 @@ pub struct GstServicePipeline {
     pipeline: gst::Pipeline,
     stop_flag: Arc<AtomicBool>,
     bus_thread: Option<thread::JoinHandle<()>>,
+    bus_poll_interval_ms: u64,
 }
 
 impl GstServicePipeline {
     pub fn for_tx(config: &TxConfig, interface_name: Option<&str>) -> Result<Self> {
         init_gstreamer()?;
         let descriptions = build_tx_descriptions(config, interface_name);
-        Self::new("tx", descriptions)
+        Self::new("tx", descriptions, config.recovery.monitor_interval_ms)
     }
 
     pub fn for_rx(config: &RxConfig, interface_name: Option<&str>) -> Result<Self> {
         init_gstreamer()?;
         let descriptions = build_rx_descriptions(config, interface_name);
-        Self::new("rx", descriptions)
+        Self::new("rx", descriptions, config.recovery.monitor_interval_ms)
     }
 
     pub fn descriptions(&self) -> &PipelineDescriptions {
@@ -86,9 +87,12 @@ impl GstServicePipeline {
         let (tx, rx) = mpsc::unbounded_channel();
         let stop_flag = Arc::clone(&self.stop_flag);
         let pipeline_name = self.name.to_string();
+        let bus_poll_interval_ms = self.bus_poll_interval_ms.max(1);
         let bus_thread = thread::spawn(move || {
             while !stop_flag.load(Ordering::Relaxed) {
-                let Some(message) = bus.timed_pop(gst::ClockTime::from_mseconds(250)) else {
+                let Some(message) =
+                    bus.timed_pop(gst::ClockTime::from_mseconds(bus_poll_interval_ms))
+                else {
                     continue;
                 };
                 let event = match message.view() {
@@ -162,7 +166,11 @@ impl GstServicePipeline {
         Ok(())
     }
 
-    fn new(name: &'static str, descriptions: PipelineDescriptions) -> Result<Self> {
+    fn new(
+        name: &'static str,
+        descriptions: PipelineDescriptions,
+        bus_poll_interval_ms: u64,
+    ) -> Result<Self> {
         init_gstreamer()?;
         let bin = gst::parse::bin_from_description(&descriptions.full, true)
             .with_context(|| format!("failed to parse {} pipeline", name))?;
@@ -176,6 +184,7 @@ impl GstServicePipeline {
             pipeline,
             stop_flag: Arc::new(AtomicBool::new(false)),
             bus_thread: None,
+            bus_poll_interval_ms,
         })
     }
 }
