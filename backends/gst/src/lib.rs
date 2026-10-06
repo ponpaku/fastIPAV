@@ -448,8 +448,8 @@ fn rx_video_branch(
             "! h264parse ",
             "! {decoder} ",
             "! videoconvert ",
-            "! identity name=video_monitor silent=true ",
             "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ",
+            "! identity name=video_monitor silent=true ",
             "! {sink}"
         ),
         port = config.network.video_port,
@@ -501,8 +501,8 @@ fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
             "! audioconvert ",
             "! audioresample ",
             "! audio/x-raw,format=S16LE,layout=interleaved,rate={sample_rate},channels={channels} ",
-            "! identity name=audio_monitor silent=true ",
             "! queue leaky=downstream max-size-buffers=8 max-size-bytes=0 max-size-time=0 ",
+            "! identity name=audio_monitor silent=true ",
             "! {sink}"
         ),
         port = config.network.audio_port,
