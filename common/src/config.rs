@@ -178,6 +178,8 @@ pub struct RecoveryConfig {
     pub restart_backoff_ms: u64,
     #[serde(default = "default_monitor_interval_ms")]
     pub monitor_interval_ms: u64,
+    #[serde(default = "default_media_timeout_ms")]
+    pub media_timeout_ms: u64,
 }
 
 impl Default for RecoveryConfig {
@@ -185,6 +187,7 @@ impl Default for RecoveryConfig {
         Self {
             restart_backoff_ms: default_restart_backoff_ms(),
             monitor_interval_ms: default_monitor_interval_ms(),
+            media_timeout_ms: default_media_timeout_ms(),
         }
     }
 }
@@ -196,6 +199,12 @@ impl RecoveryConfig {
         }
         if self.monitor_interval_ms == 0 {
             bail!("recovery.monitor_interval_ms must be greater than zero");
+        }
+        if self.media_timeout_ms == 0 {
+            bail!("recovery.media_timeout_ms must be greater than zero");
+        }
+        if self.media_timeout_ms <= self.monitor_interval_ms {
+            bail!("recovery.media_timeout_ms must be greater than recovery.monitor_interval_ms");
         }
         Ok(())
     }
@@ -599,6 +608,10 @@ fn default_restart_backoff_ms() -> u64 {
 
 fn default_monitor_interval_ms() -> u64 {
     250
+}
+
+fn default_media_timeout_ms() -> u64 {
+    5000
 }
 
 fn default_video_device() -> String {
