@@ -182,9 +182,17 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                         );
                     }
                 }
-                event = events.recv() => {
+                event = events.bus.recv() => {
                     let Some(event) = event else {
-                        break "pipeline event channel closed".to_string();
+                        break "pipeline bus event channel closed".to_string();
+                    };
+                    if handle_tx_event(&state, &event).await {
+                        break event.message();
+                    }
+                }
+                event = events.media.recv() => {
+                    let Some(event) = event else {
+                        break "pipeline media event channel closed".to_string();
                     };
                     match &event {
                         PipelineEvent::VideoBuffer => {
