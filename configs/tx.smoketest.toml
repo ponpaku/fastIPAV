@@ -23,7 +23,9 @@ restart_backoff_ms = 1000
 monitor_interval_ms = 250
 
 [video]
-source_element = "videotestsrc name=video_src is-live=true pattern=smpte do-timestamp=true"
+source_element = "videotestsrc name=video_src is-live=true pattern=smpte do-timestamp=true ! videoconvert ! jpegenc"
+source_caps = "image/jpeg,width=1280,height=720,framerate=30/1"
+source_decoder_element = "jpegdec"
 device = "/dev/video0"
 width = 1280
 height = 720
