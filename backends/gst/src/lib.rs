@@ -283,10 +283,11 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
     } else {
         config.video.encoder_element.clone()
     };
-    let encoder_is_x264 = encoder
-        .split_whitespace()
-        .next()
-        .is_some_and(|name| name == "x264enc");
+    let encoder_is_x264 = !encoder.contains('!')
+        && encoder
+            .split_whitespace()
+            .next()
+            .is_some_and(|name| name == "x264enc");
     let encoder = if encoder_is_x264 {
         format!(
             "{} bitrate={} key-int-max={} bframes=0 aud=true byte-stream=true",
