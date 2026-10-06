@@ -102,6 +102,7 @@ impl GstServicePipeline {
 
         let stop_flag = Arc::clone(&self.stop_flag);
         let pipeline_name = self.name.to_string();
+        let pipeline = self.pipeline.clone();
         let bus_poll_interval_ms = self.bus_poll_interval_ms.max(1);
         let bus_thread = thread::spawn(move || {
             while !stop_flag.load(Ordering::Relaxed) {
@@ -142,7 +143,16 @@ impl GstServicePipeline {
                     }
                     gst::MessageView::Eos(..) => Some(PipelineEvent::Eos),
                     gst::MessageView::ClockLost(..) => Some(PipelineEvent::ClockLost),
-                    gst::MessageView::Latency(..) => Some(PipelineEvent::Latency),
+                    gst::MessageView::Latency(..) => {
+                        if let Err(err) = pipeline.recalculate_latency() {
+                            Some(PipelineEvent::Warning(format!(
+                                "{} failed to recalculate latency: {}",
+                                pipeline_name, err
+                            )))
+                        } else {
+                            Some(PipelineEvent::Latency)
+                        }
+                    },
                     gst::MessageView::Element(element) => {
                         if let Some(structure) = element.structure() {
                             let name = structure.name().to_ascii_lowercase();
