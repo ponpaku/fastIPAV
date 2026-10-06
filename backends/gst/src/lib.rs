@@ -12,6 +12,8 @@ use std::{
 };
 use tokio::sync::mpsc;
 
+const EVENT_CHANNEL_CAPACITY: usize = 256;
+
 #[derive(Debug, Clone)]
 pub enum PipelineEvent {
     Info(String),
@@ -85,12 +87,12 @@ impl GstServicePipeline {
         &self.descriptions
     }
 
-    pub fn start(&mut self) -> Result<mpsc::UnboundedReceiver<PipelineEvent>> {
+    pub fn start(&mut self) -> Result<mpsc::Receiver<PipelineEvent>> {
         let bus = self
             .pipeline
             .bus()
             .ok_or_else(|| anyhow!("{} pipeline bus is not available", self.name))?;
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(EVENT_CHANNEL_CAPACITY);
         self.install_buffer_probe("video_monitor", MediaKind::Video, tx.clone())?;
         if self.descriptions.audio.is_some() {
             self.install_buffer_probe("audio_monitor", MediaKind::Audio, tx.clone())?;
@@ -173,7 +175,7 @@ impl GstServicePipeline {
 
                 if let Some(event) = event {
                     let should_break = event.requires_restart();
-                    if tx.send(event).is_err() {
+                    if tx.blocking_send(event).is_err() {
                         break;
                     }
                     if should_break {
@@ -190,7 +192,7 @@ impl GstServicePipeline {
         &self,
         element_name: &str,
         media_kind: MediaKind,
-        sender: mpsc::UnboundedSender<PipelineEvent>,
+        sender: mpsc::Sender<PipelineEvent>,
     ) -> Result<()> {
         let element = self.pipeline.by_name(element_name).ok_or_else(|| {
             anyhow!(
@@ -211,7 +213,11 @@ impl GstServicePipeline {
                 MediaKind::Video => PipelineEvent::VideoBuffer,
                 MediaKind::Audio => PipelineEvent::AudioBuffer,
             };
-            let _ = sender.send(event);
+            // Buffer events are heartbeats/counters. Never block a GStreamer
+            // streaming thread; if the consumer is temporarily behind, dropping
+            // a heartbeat is preferable to unbounded memory growth or pipeline
+            // backpressure. Critical bus events use blocking_send above.
+            let _ = sender.try_send(event);
             gst::PadProbeReturn::Ok
         })
         .ok_or_else(|| anyhow!("failed to install buffer probe on {}", element_name))?;
