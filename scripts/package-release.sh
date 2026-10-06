@@ -105,6 +105,7 @@ log "staging package in ${PACKAGE_DIR}"
 install -d "${PACKAGE_DIR}/bin" "${PACKAGE_DIR}/configs" "${PACKAGE_DIR}/systemd"
 install -m 0755 "${BIN_DIR}/tx" "${PACKAGE_DIR}/bin/tx"
 install -m 0755 "${BIN_DIR}/rx" "${PACKAGE_DIR}/bin/rx"
+install -m 0644 LICENSE "${PACKAGE_DIR}/LICENSE"
 cp configs/*.toml "${PACKAGE_DIR}/configs/"
 cp systemd/*.service "${PACKAGE_DIR}/systemd/"
 
