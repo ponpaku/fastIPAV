@@ -746,6 +746,21 @@ mod tests {
     }
 
     #[test]
+    fn repository_config_examples_load_and_validate() {
+        let config_dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../configs");
+
+        for name in ["tx.default.toml", "tx.pi.toml", "tx.smoketest.toml"] {
+            TxConfig::load(config_dir.join(name))
+                .unwrap_or_else(|err| panic!("failed to load {name}: {err:#}"));
+        }
+        for name in ["rx.default.toml", "rx.pi.toml", "rx.smoketest.toml"] {
+            RxConfig::load(config_dir.join(name))
+                .unwrap_or_else(|err| panic!("failed to load {name}: {err:#}"));
+        }
+    }
+
+    #[test]
     fn supports_ipv6_http_bind_address() {
         let config = HttpConfig {
             bind_addr: "::1".to_string(),
