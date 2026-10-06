@@ -114,11 +114,7 @@ impl SharedServiceState {
         push_note(&mut stats.notes, message);
     }
 
-    pub async fn mark_waiting(
-        &self,
-        state: impl Into<String>,
-        message: impl Into<String>,
-    ) {
+    pub async fn mark_waiting(&self, state: impl Into<String>, message: impl Into<String>) {
         let state = state.into();
         let message = message.into();
         let mut health = self.health.write().await;
