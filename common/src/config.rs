@@ -51,6 +51,7 @@ impl RendererKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PlatformConfig {
     #[serde(default)]
     pub profile: PlatformProfile,
@@ -65,6 +66,7 @@ impl Default for PlatformConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NetworkConfig {
     #[serde(default = "default_multicast_group")]
     pub multicast_group: String,
@@ -141,6 +143,7 @@ impl NetworkConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HttpConfig {
     #[serde(default = "default_http_bind_addr")]
     pub bind_addr: String,
@@ -173,6 +176,7 @@ impl HttpConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RecoveryConfig {
     #[serde(default = "default_restart_backoff_ms")]
     pub restart_backoff_ms: u64,
@@ -211,6 +215,7 @@ impl RecoveryConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TxVideoConfig {
     #[serde(default)]
     pub source_element: String,
@@ -252,6 +257,7 @@ impl Default for TxVideoConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RxVideoConfig {
     #[serde(default = "default_width")]
     pub width: u32,
@@ -293,6 +299,7 @@ impl Default for RxVideoConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TxAudioConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -328,6 +335,7 @@ impl Default for TxAudioConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RxAudioConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -372,6 +380,7 @@ impl Default for RxAudioConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TxConfig {
     #[serde(default = "default_tx_node_name")]
     pub node_name: String,
@@ -442,6 +451,7 @@ impl TxConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RxConfig {
     #[serde(default = "default_rx_node_name")]
     pub node_name: String,
@@ -741,5 +751,17 @@ mod tests {
         config.audio.enabled = true;
         config.network.audio_port = config.network.video_port;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_config_fields() {
+        let input = r#"
+node_name = "test"
+
+[video]
+fps = 30
+typo_fps = 60
+"#;
+        assert!(toml::from_str::<TxConfig>(input).is_err());
     }
 }
