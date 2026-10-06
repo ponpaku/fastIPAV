@@ -21,6 +21,7 @@ port = 18081
 [recovery]
 restart_backoff_ms = 1000
 monitor_interval_ms = 250
+media_timeout_ms = 5000
 
 [video]
 source_element = "videotestsrc name=video_src is-live=true pattern=smpte do-timestamp=true ! videoconvert ! jpegenc"
