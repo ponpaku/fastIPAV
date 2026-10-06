@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use avoverip_common::config::{PlatformProfile, RendererKind, RxConfig, TxConfig};
-use gstreamer as gst;
 use gst::prelude::*;
+use gstreamer as gst;
 use std::{
     env,
     sync::{
@@ -152,7 +152,7 @@ impl GstServicePipeline {
                         } else {
                             Some(PipelineEvent::Latency)
                         }
-                    },
+                    }
                     gst::MessageView::Element(element) => {
                         if let Some(structure) = element.structure() {
                             let name = structure.name().to_ascii_lowercase();
@@ -192,13 +192,20 @@ impl GstServicePipeline {
         media_kind: MediaKind,
         sender: mpsc::UnboundedSender<PipelineEvent>,
     ) -> Result<()> {
-        let element = self
-            .pipeline
-            .by_name(element_name)
-            .ok_or_else(|| anyhow!("{} pipeline element {} is not available", self.name, element_name))?;
-        let pad = element
-            .static_pad("src")
-            .ok_or_else(|| anyhow!("{} pipeline element {} has no src pad", self.name, element_name))?;
+        let element = self.pipeline.by_name(element_name).ok_or_else(|| {
+            anyhow!(
+                "{} pipeline element {} is not available",
+                self.name,
+                element_name
+            )
+        })?;
+        let pad = element.static_pad("src").ok_or_else(|| {
+            anyhow!(
+                "{} pipeline element {} has no src pad",
+                self.name,
+                element_name
+            )
+        })?;
         pad.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
             let pts_ns = info
                 .buffer()
@@ -491,9 +498,7 @@ fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
     };
     let caps = format!(
         "application/x-rtp,media=audio,encoding-name=L16,payload={},clock-rate={},channels={}",
-        config.network.audio_payload_type,
-        config.audio.sample_rate,
-        config.audio.channels
+        config.network.audio_payload_type, config.audio.sample_rate, config.audio.channels
     );
     format!(
         concat!(
@@ -530,12 +535,9 @@ fn render_sink(
     let sync_value = if sync { "true" } else { "false" };
     let max_lateness_ns = (max_lateness_ms as u64) * 1_000_000;
     match renderer.resolve(profile) {
-        RendererKind::Sdl => render_linux_sink(
-            preferred_linux_sink(),
-            fullscreen,
-            sync,
-            max_lateness_ms,
-        ),
+        RendererKind::Sdl => {
+            render_linux_sink(preferred_linux_sink(), fullscreen, sync, max_lateness_ms)
+        }
         RendererKind::KmsDrm => {
             if has_element("kmssink") {
                 format!(
@@ -546,7 +548,13 @@ fn render_sink(
                 )
             } else {
                 // Fall back to the Linux desktop sink path when KMS is unavailable.
-                render_sink(&RendererKind::Sdl, &PlatformProfile::LinuxPc, fullscreen, sync, max_lateness_ms)
+                render_sink(
+                    &RendererKind::Sdl,
+                    &PlatformProfile::LinuxPc,
+                    fullscreen,
+                    sync,
+                    max_lateness_ms,
+                )
             }
         }
         RendererKind::Auto => unreachable!("renderer auto is resolved before sink selection"),
@@ -595,7 +603,13 @@ fn preferred_h264_decoder(profile: &PlatformProfile) -> String {
             }
         }
         PlatformProfile::LinuxPc | PlatformProfile::Auto => {
-            for candidate in ["avdec_h264", "openh264dec", "vah264dec", "vaapih264dec", "decodebin"] {
+            for candidate in [
+                "avdec_h264",
+                "openh264dec",
+                "vah264dec",
+                "vaapih264dec",
+                "decodebin",
+            ] {
                 if candidate == "decodebin" || has_element(candidate) {
                     return candidate.to_string();
                 }
@@ -636,8 +650,7 @@ fn render_linux_sink(
         ),
         LinuxSink::XImage => format!(
             "ximagesink sync={} qos=true max-lateness={}",
-            sync_value,
-            max_lateness_ns
+            sync_value, max_lateness_ns
         ),
         // autovideosink is a GstBin, not a GstBaseSink, so it does not expose
         // sync/qos/max-lateness itself. Its selected child sink owns those.
@@ -667,7 +680,6 @@ fn has_element(name: &str) -> bool {
     gst::ElementFactory::find(name).is_some()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -686,8 +698,7 @@ mod tests {
 
     #[test]
     fn shipped_pipeline_configs_parse() {
-        let config_dir =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs");
+        let config_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs");
 
         for name in ["tx.default.toml", "tx.pi.toml", "tx.smoketest.toml"] {
             let config = TxConfig::load(config_dir.join(name))
