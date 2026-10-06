@@ -228,7 +228,244 @@ for path_value in "${PREFIX}" "${CONFIG_DIR}" "${SYSTEMD_DIR}"; do
     /*) ;;
     *) fail "install paths must be absolute: ${path_value}" ;;
   esac
+  printf '%s\n' "${path_value}" | grep -Eq '^/[A-Za-z0-9._/-]+"$(normalize_arch)"
+case "${ARCH}" in
+  x86_64) EXPECTED_TARGET="x86_64-unknown-linux-gnu" ;;
+  aarch64) EXPECTED_TARGET="aarch64-unknown-linux-gnu" ;;
+  *) fail "unsupported architecture: ${ARCH}" ;;
+esac
+PROFILE_SUFFIX="$(detect_profile_suffix)"
+
+if [ -z "${VERSION}" ]; then
+  VERSION="$(resolve_latest_version)"
+fi
+
+[ -n "${VERSION}" ] || fail "failed to resolve release version"
+printf '%s\n' "${VERSION}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?"$(artifact_name "${VERSION}" "${ARCH}")"
+PACKAGE_BASENAME="${PACKAGE_NAME%.tar.gz}"
+CHECKSUM_NAME="$(checksum_name "${VERSION}" "${ARCH}")"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "${TMP_DIR}"' EXIT
+LOCAL_PACKAGE="${REPO_ROOT}/dist/${PACKAGE_NAME}"
+LOCAL_CHECKSUM="${REPO_ROOT}/dist/${CHECKSUM_NAME}"
+PACKAGE_PATH="${TMP_DIR}/${PACKAGE_NAME}"
+CHECKSUM_PATH="${TMP_DIR}/${CHECKSUM_NAME}"
+
+if [ -f "${LOCAL_PACKAGE}" ]; then
+  [ -f "${LOCAL_CHECKSUM}" ] || fail "local checksum is missing: ${LOCAL_CHECKSUM}"
+  log "using local package ${LOCAL_PACKAGE}"
+  cp "${LOCAL_PACKAGE}" "${PACKAGE_PATH}"
+  cp "${LOCAL_CHECKSUM}" "${CHECKSUM_PATH}"
+else
+  download_release_asset "${PACKAGE_NAME}" "${PACKAGE_PATH}"
+  download_release_asset "${CHECKSUM_NAME}" "${CHECKSUM_PATH}"
+fi
+
+verify_package "${PACKAGE_PATH}" "${CHECKSUM_PATH}"
+tar -xzf "${PACKAGE_PATH}" -C "${TMP_DIR}"
+
+PACKAGE_DIR="${TMP_DIR}/${PACKAGE_BASENAME}"
+[ -d "${PACKAGE_DIR}" ] || fail "release archive does not contain expected directory ${PACKAGE_BASENAME}"
+[ -f "${PACKAGE_DIR}/manifest.txt" ] || fail "release manifest is missing"
+
+manifest_value() {
+  local key="$1"
+  sed -n "s/^${key}=//p" "${PACKAGE_DIR}/manifest.txt" | head -n1
+}
+
+MANIFEST_NAME="$(manifest_value name)"
+MANIFEST_VERSION="$(manifest_value version)"
+MANIFEST_TARGET="$(manifest_value target)"
+MANIFEST_ARCH="$(manifest_value arch)"
+[ "${MANIFEST_NAME}" = "${PACKAGE_BASENAME}" ] \
+  || fail "release manifest name mismatch: expected ${PACKAGE_BASENAME}, got ${MANIFEST_NAME:-<empty>}"
+[ "${MANIFEST_VERSION}" = "${VERSION}" ] \
+  || fail "release manifest version mismatch: expected ${VERSION}, got ${MANIFEST_VERSION:-<empty>}"
+[ "${MANIFEST_TARGET}" = "${EXPECTED_TARGET}" ] \
+  || fail "release manifest target mismatch: expected ${EXPECTED_TARGET}, got ${MANIFEST_TARGET:-<empty>}"
+[ "${MANIFEST_ARCH}" = "${ARCH}" ] \
+  || fail "release manifest architecture mismatch: expected ${ARCH}, got ${MANIFEST_ARCH:-<empty>}"
+
+log "installing binaries to ${PREFIX}/bin"
+as_root install -d "${PREFIX}/bin"
+as_root install -m 0755 "${PACKAGE_DIR}/bin/tx" "${PREFIX}/bin/tx"
+as_root install -m 0755 "${PACKAGE_DIR}/bin/rx" "${PREFIX}/bin/rx"
+
+log "installing shared assets to ${SHARE_DIR}"
+as_root install -d "${SHARE_DIR}/configs" "${SHARE_DIR}/systemd"
+as_root install -m 0644 "${PACKAGE_DIR}/LICENSE" "${SHARE_DIR}/LICENSE"
+as_root cp -f "${PACKAGE_DIR}/configs/"*.toml "${SHARE_DIR}/configs/"
+as_root cp -f "${PACKAGE_DIR}/systemd/"*.service "${SHARE_DIR}/systemd/"
+
+log "installing default config files to ${CONFIG_DIR}"
+as_root install -d "${CONFIG_DIR}"
+if [ ! -f "${CONFIG_DIR}/tx.toml" ]; then
+  as_root install -m 0644 "${PACKAGE_DIR}/configs/tx.${PROFILE_SUFFIX}.toml" "${CONFIG_DIR}/tx.toml"
+else
+  log "keeping existing ${CONFIG_DIR}/tx.toml"
+fi
+if [ ! -f "${CONFIG_DIR}/rx.toml" ]; then
+  as_root install -m 0644 "${PACKAGE_DIR}/configs/rx.${PROFILE_SUFFIX}.toml" "${CONFIG_DIR}/rx.toml"
+else
+  log "keeping existing ${CONFIG_DIR}/rx.toml"
+fi
+
+escape_sed_replacement() {
+  printf '%s' "$1" | sed 's/[#&\\]/\\&/g'
+}
+
+PREFIX_SED="$(escape_sed_replacement "${PREFIX}")"
+CONFIG_DIR_SED="$(escape_sed_replacement "${CONFIG_DIR}")"
+
+log "installing systemd unit files to ${SYSTEMD_DIR}"
+as_root install -d "${SYSTEMD_DIR}"
+for role in tx rx; do
+  unit_source="${PACKAGE_DIR}/systemd/avoverip-${role}.service"
+  unit_rendered="${TMP_DIR}/avoverip-${role}.service"
+  sed \
+    -e "s#/usr/local/bin/#${PREFIX_SED}/bin/#g" \
+    -e "s#/etc/avoverip/#${CONFIG_DIR_SED}/#g" \
+    "${unit_source}" > "${unit_rendered}"
+  as_root install -m 0644 "${unit_rendered}" "${SYSTEMD_DIR}/avoverip-${role}.service"
 done
+as_root systemctl daemon-reload || true
+
+if [ -n "${ENABLE_SERVICE}" ]; then
+  enable_services "${ENABLE_SERVICE}"
+fi
+
+USER_TO_CHECK="${SUDO_USER:-${USER:-}}"
+if [ -n "${USER_TO_CHECK}" ] && command -v id >/dev/null 2>&1; then
+  USER_GROUPS="$(id -nG "${USER_TO_CHECK}" 2>/dev/null || true)"
+  if ! printf '%s\n' "${USER_GROUPS}" | grep -qw video; then
+    log "note: ${USER_TO_CHECK} is not in the video group"
+  fi
+  if ! printf '%s\n' "${USER_GROUPS}" | grep -qw audio; then
+    log "note: ${USER_TO_CHECK} is not in the audio group"
+  fi
+fi
+
+log "installation complete"
+log "binaries: ${PREFIX}/bin/tx and ${PREFIX}/bin/rx"
+log "configs: ${CONFIG_DIR}/tx.toml and ${CONFIG_DIR}/rx.toml"
+log "shared examples: ${SHARE_DIR}/configs"
+if [ -z "${ENABLE_SERVICE}" ]; then
+  log "services were not enabled automatically; use systemctl enable --now avoverip-{tx,rx} when ready"
+fi
+ \
+  || fail "invalid release version: ${VERSION}"
+
+PACKAGE_NAME="$(artifact_name "${VERSION}" "${ARCH}")"
+PACKAGE_BASENAME="${PACKAGE_NAME%.tar.gz}"
+CHECKSUM_NAME="$(checksum_name "${VERSION}" "${ARCH}")"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "${TMP_DIR}"' EXIT
+LOCAL_PACKAGE="${REPO_ROOT}/dist/${PACKAGE_NAME}"
+LOCAL_CHECKSUM="${REPO_ROOT}/dist/${CHECKSUM_NAME}"
+PACKAGE_PATH="${TMP_DIR}/${PACKAGE_NAME}"
+CHECKSUM_PATH="${TMP_DIR}/${CHECKSUM_NAME}"
+
+if [ -f "${LOCAL_PACKAGE}" ]; then
+  [ -f "${LOCAL_CHECKSUM}" ] || fail "local checksum is missing: ${LOCAL_CHECKSUM}"
+  log "using local package ${LOCAL_PACKAGE}"
+  cp "${LOCAL_PACKAGE}" "${PACKAGE_PATH}"
+  cp "${LOCAL_CHECKSUM}" "${CHECKSUM_PATH}"
+else
+  download_release_asset "${PACKAGE_NAME}" "${PACKAGE_PATH}"
+  download_release_asset "${CHECKSUM_NAME}" "${CHECKSUM_PATH}"
+fi
+
+verify_package "${PACKAGE_PATH}" "${CHECKSUM_PATH}"
+tar -xzf "${PACKAGE_PATH}" -C "${TMP_DIR}"
+
+PACKAGE_DIR="${TMP_DIR}/${PACKAGE_BASENAME}"
+[ -d "${PACKAGE_DIR}" ] || fail "release archive does not contain expected directory ${PACKAGE_BASENAME}"
+[ -f "${PACKAGE_DIR}/manifest.txt" ] || fail "release manifest is missing"
+
+manifest_value() {
+  local key="$1"
+  sed -n "s/^${key}=//p" "${PACKAGE_DIR}/manifest.txt" | head -n1
+}
+
+MANIFEST_NAME="$(manifest_value name)"
+MANIFEST_VERSION="$(manifest_value version)"
+MANIFEST_TARGET="$(manifest_value target)"
+MANIFEST_ARCH="$(manifest_value arch)"
+[ "${MANIFEST_NAME}" = "${PACKAGE_BASENAME}" ] \
+  || fail "release manifest name mismatch: expected ${PACKAGE_BASENAME}, got ${MANIFEST_NAME:-<empty>}"
+[ "${MANIFEST_VERSION}" = "${VERSION}" ] \
+  || fail "release manifest version mismatch: expected ${VERSION}, got ${MANIFEST_VERSION:-<empty>}"
+[ "${MANIFEST_TARGET}" = "${EXPECTED_TARGET}" ] \
+  || fail "release manifest target mismatch: expected ${EXPECTED_TARGET}, got ${MANIFEST_TARGET:-<empty>}"
+[ "${MANIFEST_ARCH}" = "${ARCH}" ] \
+  || fail "release manifest architecture mismatch: expected ${ARCH}, got ${MANIFEST_ARCH:-<empty>}"
+
+log "installing binaries to ${PREFIX}/bin"
+as_root install -d "${PREFIX}/bin"
+as_root install -m 0755 "${PACKAGE_DIR}/bin/tx" "${PREFIX}/bin/tx"
+as_root install -m 0755 "${PACKAGE_DIR}/bin/rx" "${PREFIX}/bin/rx"
+
+log "installing shared assets to ${SHARE_DIR}"
+as_root install -d "${SHARE_DIR}/configs" "${SHARE_DIR}/systemd"
+as_root install -m 0644 "${PACKAGE_DIR}/LICENSE" "${SHARE_DIR}/LICENSE"
+as_root cp -f "${PACKAGE_DIR}/configs/"*.toml "${SHARE_DIR}/configs/"
+as_root cp -f "${PACKAGE_DIR}/systemd/"*.service "${SHARE_DIR}/systemd/"
+
+log "installing default config files to ${CONFIG_DIR}"
+as_root install -d "${CONFIG_DIR}"
+if [ ! -f "${CONFIG_DIR}/tx.toml" ]; then
+  as_root install -m 0644 "${PACKAGE_DIR}/configs/tx.${PROFILE_SUFFIX}.toml" "${CONFIG_DIR}/tx.toml"
+else
+  log "keeping existing ${CONFIG_DIR}/tx.toml"
+fi
+if [ ! -f "${CONFIG_DIR}/rx.toml" ]; then
+  as_root install -m 0644 "${PACKAGE_DIR}/configs/rx.${PROFILE_SUFFIX}.toml" "${CONFIG_DIR}/rx.toml"
+else
+  log "keeping existing ${CONFIG_DIR}/rx.toml"
+fi
+
+log "installing systemd unit files to ${SYSTEMD_DIR}"
+as_root install -d "${SYSTEMD_DIR}"
+for role in tx rx; do
+  unit_source="${PACKAGE_DIR}/systemd/avoverip-${role}.service"
+  unit_rendered="${TMP_DIR}/avoverip-${role}.service"
+  sed \
+    -e "s#/usr/local/bin/#${PREFIX}/bin/#g" \
+    -e "s#/etc/avoverip/#${CONFIG_DIR}/#g" \
+    "${unit_source}" > "${unit_rendered}"
+  as_root install -m 0644 "${unit_rendered}" "${SYSTEMD_DIR}/avoverip-${role}.service"
+done
+as_root systemctl daemon-reload || true
+
+if [ -n "${ENABLE_SERVICE}" ]; then
+  enable_services "${ENABLE_SERVICE}"
+fi
+
+USER_TO_CHECK="${SUDO_USER:-${USER:-}}"
+if [ -n "${USER_TO_CHECK}" ] && command -v id >/dev/null 2>&1; then
+  USER_GROUPS="$(id -nG "${USER_TO_CHECK}" 2>/dev/null || true)"
+  if ! printf '%s\n' "${USER_GROUPS}" | grep -qw video; then
+    log "note: ${USER_TO_CHECK} is not in the video group"
+  fi
+  if ! printf '%s\n' "${USER_GROUPS}" | grep -qw audio; then
+    log "note: ${USER_TO_CHECK} is not in the audio group"
+  fi
+fi
+
+log "installation complete"
+log "binaries: ${PREFIX}/bin/tx and ${PREFIX}/bin/rx"
+log "configs: ${CONFIG_DIR}/tx.toml and ${CONFIG_DIR}/rx.toml"
+log "shared examples: ${SHARE_DIR}/configs"
+if [ -z "${ENABLE_SERVICE}" ]; then
+  log "services were not enabled automatically; use systemctl enable --now avoverip-{tx,rx} when ready"
+fi
+ \
+    || fail "install paths may only contain letters, numbers, '.', '_', '-', and '/': ${path_value}"
+done
+
+if [ -n "${ENABLE_SERVICE}" ] && [ "${SYSTEMD_DIR}" != "/etc/systemd/system" ]; then
+  fail "--enable-service requires --systemd-dir /etc/systemd/system"
+fi
 
 ARCH="$(normalize_arch)"
 case "${ARCH}" in
