@@ -232,6 +232,7 @@ fi
 [ -n "${VERSION}" ] || fail "failed to resolve release version"
 
 PACKAGE_NAME="$(artifact_name "${VERSION}" "${ARCH}")"
+PACKAGE_BASENAME="${PACKAGE_NAME%.tar.gz}"
 CHECKSUM_NAME="$(checksum_name "${VERSION}" "${ARCH}")"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
@@ -253,8 +254,24 @@ fi
 verify_package "${PACKAGE_PATH}" "${CHECKSUM_PATH}"
 tar -xzf "${PACKAGE_PATH}" -C "${TMP_DIR}"
 
-PACKAGE_DIR="$(find "${TMP_DIR}" -mindepth 1 -maxdepth 1 -type d | head -n1)"
-[ -n "${PACKAGE_DIR}" ] || fail "failed to locate extracted package directory"
+PACKAGE_DIR="${TMP_DIR}/${PACKAGE_BASENAME}"
+[ -d "${PACKAGE_DIR}" ] || fail "release archive does not contain expected directory ${PACKAGE_BASENAME}"
+[ -f "${PACKAGE_DIR}/manifest.txt" ] || fail "release manifest is missing"
+
+manifest_value() {
+  local key="$1"
+  sed -n "s/^${key}=//p" "${PACKAGE_DIR}/manifest.txt" | head -n1
+}
+
+MANIFEST_NAME="$(manifest_value name)"
+MANIFEST_VERSION="$(manifest_value version)"
+MANIFEST_ARCH="$(manifest_value arch)"
+[ "${MANIFEST_NAME}" = "${PACKAGE_BASENAME}" ] \
+  || fail "release manifest name mismatch: expected ${PACKAGE_BASENAME}, got ${MANIFEST_NAME:-<empty>}"
+[ "${MANIFEST_VERSION}" = "${VERSION}" ] \
+  || fail "release manifest version mismatch: expected ${VERSION}, got ${MANIFEST_VERSION:-<empty>}"
+[ "${MANIFEST_ARCH}" = "${ARCH}" ] \
+  || fail "release manifest architecture mismatch: expected ${ARCH}, got ${MANIFEST_ARCH:-<empty>}"
 
 log "installing binaries to ${PREFIX}/bin"
 as_root install -d "${PREFIX}/bin"
