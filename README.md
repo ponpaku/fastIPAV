@@ -17,7 +17,7 @@
 
 1. 依存 package を入れる
 2. `git clone`
-3. `./scripts/install.sh`
+3. `bash scripts/install.sh`
 4. 必要なら `systemctl enable --now ...`
 
 ## できること
@@ -72,25 +72,25 @@ sudo apt-get install -y \
 ```bash
 git clone git@github.com:ponpaku/fastIPAV.git
 cd fastIPAV
-./scripts/install.sh
+bash scripts/install.sh
 ```
 
 依存もスクリプト側にやらせる場合:
 
 ```bash
-./scripts/install.sh --install-deps
+bash scripts/install.sh --install-deps
 ```
 
 `tx` / `rx` の unit を同時に有効化したい場合:
 
 ```bash
-./scripts/install.sh --enable-service both
+bash scripts/install.sh --enable-service both
 ```
 
 `rx` だけ有効化したい場合:
 
 ```bash
-./scripts/install.sh --enable-service rx
+bash scripts/install.sh --enable-service rx
 ```
 
 ### install 後の配置先
@@ -241,7 +241,7 @@ bash scripts/smoke-test.sh
 
 ```bash
 source "$HOME/.cargo/env"
-./scripts/package-release.sh --version v0.1.0
+bash scripts/package-release.sh --version v0.1.0
 ```
 
 Raspberry Pi 向け `aarch64` release は、GStreamerなどのnative libraryへリンクするため、単純なRust target追加だけではクロスビルドしない。aarch64 Linuxホスト上で実行するか、GitHub ActionsのRelease workflowを使う。
@@ -250,7 +250,7 @@ aarch64 Linuxホスト上:
 
 ```bash
 source "$HOME/.cargo/env"
-./scripts/package-release.sh --version v0.1.0
+bash scripts/package-release.sh --version v0.1.0
 ```
 
 生成物:
