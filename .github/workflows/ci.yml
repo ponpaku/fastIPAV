@@ -72,11 +72,13 @@ jobs:
       - name: Test release packaging and local install
         if: matrix.name == 'ubuntu-22.04-x86_64'
         run: |
-          bash scripts/package-release.sh --version v0.1.0
+          workspace_version="$(grep -m1 '^version = "' Cargo.toml | cut -d'"' -f2)"
+          release_tag="v${workspace_version}"
+          bash scripts/package-release.sh --version "${release_tag}"
 
           install_root="$(mktemp -d)"
           bash scripts/install.sh \
-            --version v0.1.0 \
+            --version "${release_tag}" \
             --prefix "${install_root}/usr/local" \
             --config-dir "${install_root}/etc/avoverip" \
             --systemd-dir "${install_root}/systemd"
