@@ -3,7 +3,7 @@ use avoverip_common::config::{PlatformProfile, RendererKind, RxConfig, TxConfig}
 use gst::prelude::*;
 use gstreamer as gst;
 use std::{
-    env,
+    env, fs,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -598,9 +598,14 @@ fn select_h264_decoder(config: &RxConfig) -> String {
 fn preferred_h264_decoder(profile: &PlatformProfile) -> String {
     match profile {
         PlatformProfile::RaspberryPi => {
-            for candidate in ["v4l2h264dec", "avdec_h264", "openh264dec", "decodebin"] {
-                if candidate == "decodebin" || has_element(candidate) {
-                    return candidate.to_string();
+            let candidates: &[&str] = if is_raspberry_pi_5() {
+                &["avdec_h264", "openh264dec", "decodebin"]
+            } else {
+                &["v4l2h264dec", "avdec_h264", "openh264dec", "decodebin"]
+            };
+            for candidate in candidates {
+                if *candidate == "decodebin" || has_element(candidate) {
+                    return (*candidate).to_string();
                 }
             }
         }
@@ -680,6 +685,13 @@ fn preferred_linux_sink() -> LinuxSink {
 
 fn has_element(name: &str) -> bool {
     gst::ElementFactory::find(name).is_some()
+}
+
+fn is_raspberry_pi_5() -> bool {
+    fs::read("/proc/device-tree/model")
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .is_some_and(|model| model.trim_end_matches('\0').contains("Raspberry Pi 5"))
 }
 
 #[cfg(test)]
