@@ -97,6 +97,14 @@ printf '%s' "${RX_STATS}" | grep -Eq '"frames_total":[1-9][0-9]*' || {
   printf '[smoke-test] rx reported no decoded video buffers\n' >&2
   exit 1
 }
+printf '%s' "${TX_STATS}" | grep -Eq '"audio_chunks_total":[1-9][0-9]*' || {
+  printf '[smoke-test] tx reported no audio buffers\n' >&2
+  exit 1
+}
+printf '%s' "${RX_STATS}" | grep -Eq '"audio_chunks_total":[1-9][0-9]*' || {
+  printf '[smoke-test] rx reported no decoded audio buffers\n' >&2
+  exit 1
+}
 
 kill -TERM "${tx_pid}" "${rx_pid}"
 wait "${tx_pid}"
@@ -104,4 +112,4 @@ wait "${rx_pid}"
 tx_pid=""
 rx_pid=""
 
-printf '[smoke-test] tx/rx loopback smoke test passed with actual video buffers\n'
+printf '[smoke-test] tx/rx loopback smoke test passed with actual video and audio buffers\n'
