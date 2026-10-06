@@ -262,7 +262,13 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
             "rx pipeline restart scheduled in {} ms: {}",
             config.recovery.restart_backoff_ms, restart_reason
         );
-        tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)).await;
+        tokio::select! {
+            _ = &mut shutdown => {
+                state.mark_stopping("rx shutting down").await;
+                return Ok(());
+            }
+            _ = tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)) => {}
+        }
     }
 }
 
