@@ -40,6 +40,7 @@ jobs:
             curl \
             git \
             pkg-config \
+            shellcheck \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-tools \
@@ -59,7 +60,9 @@ jobs:
           "${HOME}/.cargo/bin/rustup" component add rustfmt clippy
 
       - name: Validate shell scripts
-        run: bash -n scripts/*.sh tools/*.sh
+        run: |
+          bash -n scripts/*.sh tools/*.sh
+          shellcheck scripts/*.sh tools/*.sh
 
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
