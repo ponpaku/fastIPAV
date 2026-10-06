@@ -215,6 +215,10 @@ curl -fsS http://127.0.0.1:8082/stats
 bash scripts/smoke-test.sh
 ```
 
+このテストは MJPEG 入力相当の経路を生成し、TX の H.264 encode 後と RX の H.264 decode 後の双方で実際に video buffer が通過したことを確認する。単に pipeline が `Playing` になっただけでは成功扱いしない。
+
+`/healthz` の `ok=true` も、video pipeline の開始だけではなく最初の video buffer を確認した後に返る。映像が流れていない場合は `state=waiting_for_video` のままになる。
+
 設定ファイルは起動時に検証される。multicast address、RTP port / payload type、映像サイズ・fps、HTTP bind、audio parameter などが不正な場合は pipeline 構築前にエラーで終了する。
 
 `/stats` の主な項目:
