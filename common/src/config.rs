@@ -531,8 +531,14 @@ fn validate_video_dimensions(width: u32, height: u32, fps: u32) -> Result<()> {
     if width == 0 || height == 0 {
         bail!("video width and height must be greater than zero");
     }
+    if width > i32::MAX as u32 || height > i32::MAX as u32 {
+        bail!("video width and height must fit in signed 32-bit GStreamer caps");
+    }
     if fps == 0 {
         bail!("video.fps must be greater than zero");
+    }
+    if fps > i32::MAX as u32 {
+        bail!("video.fps must fit in signed 32-bit GStreamer caps");
     }
     Ok(())
 }
@@ -546,8 +552,14 @@ fn validate_audio(
     if sample_rate == 0 {
         bail!("audio.sample_rate must be greater than zero");
     }
+    if sample_rate > i32::MAX as u32 {
+        bail!("audio.sample_rate must fit in signed 32-bit GStreamer caps");
+    }
     if channels == 0 {
         bail!("audio.channels must be greater than zero");
+    }
+    if channels > i32::MAX as u32 {
+        bail!("audio.channels must fit in signed 32-bit GStreamer caps");
     }
     if buffer_time_us <= 0 {
         bail!("audio.buffer_time_us must be greater than zero");
@@ -786,6 +798,21 @@ mod tests {
     fn rejects_invalid_multicast_ttl() {
         let mut config = TxConfig::default();
         config.network.ttl = 256;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_video_caps_values_above_gstreamer_int_range() {
+        let mut config = RxConfig::default();
+        config.video.width = (i32::MAX as u32) + 1;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_audio_caps_values_above_gstreamer_int_range() {
+        let mut config = TxConfig::default();
+        config.audio.enabled = true;
+        config.audio.sample_rate = (i32::MAX as u32) + 1;
         assert!(config.validate().is_err());
     }
 
