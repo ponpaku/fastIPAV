@@ -10,8 +10,8 @@ usage() {
 Usage: scripts/package-release.sh --version <tag> [--target <triple>] [--skip-build]
 
 Examples:
-  ./scripts/package-release.sh --version v0.1.0
-  ./scripts/package-release.sh --version v0.1.0 --target aarch64-unknown-linux-gnu
+  bash scripts/package-release.sh --version v0.1.0
+  bash scripts/package-release.sh --version v0.1.0 --target aarch64-unknown-linux-gnu
 EOF
 }
 
