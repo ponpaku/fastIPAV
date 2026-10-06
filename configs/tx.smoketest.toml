@@ -36,7 +36,8 @@ gop = 30
 encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast"
 
 [audio]
-enabled = false
+enabled = true
+source_element = "audiotestsrc name=audio_src is-live=true wave=sine do-timestamp=true"
 device = "default"
 sample_rate = 48000
 channels = 2
