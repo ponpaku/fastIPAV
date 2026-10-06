@@ -187,14 +187,14 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                         break "pipeline event channel closed".to_string();
                     };
                     match &event {
-                        PipelineEvent::VideoBuffer { .. } => {
+                        PipelineEvent::VideoBuffer => {
                             last_video_buffer = Instant::now();
                             if !video_ready {
                                 video_ready = true;
                                 info!("tx received first video buffer");
                             }
                         }
-                        PipelineEvent::AudioBuffer { .. } => {
+                        PipelineEvent::AudioBuffer => {
                             last_audio_buffer = Instant::now();
                             if !audio_ready {
                                 audio_ready = true;
@@ -285,11 +285,11 @@ async fn handle_tx_event(state: &SharedServiceState, event: &PipelineEvent) -> b
                 .await;
             false
         }
-        PipelineEvent::VideoBuffer { .. } => {
+        PipelineEvent::VideoBuffer => {
             state.bump_frames_total().await;
             false
         }
-        PipelineEvent::AudioBuffer { .. } => {
+        PipelineEvent::AudioBuffer => {
             state.bump_audio_chunks_total().await;
             false
         }
