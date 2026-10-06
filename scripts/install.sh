@@ -87,6 +87,45 @@ artifact_name() {
   printf 'fastipav-%s-linux-%s.tar.gz' "${version}" "${arch}"
 }
 
+checksum_name() {
+  local version="$1"
+  local arch="$2"
+  printf 'fastipav-%s-linux-%s.sha256' "${version}" "${arch}"
+}
+
+download_release_asset() {
+  local asset_name="$1"
+  local destination="$2"
+  local asset_url="https://github.com/${REPO_SLUG}/releases/download/${VERSION}/${asset_name}"
+
+  log "downloading ${asset_url}"
+  if curl -fL "${asset_url}" -o "${destination}"; then
+    return
+  fi
+
+  rm -f "${destination}"
+  if command -v gh >/dev/null 2>&1; then
+    log "curl download failed, trying gh release download"
+    gh release download "${VERSION}" -R "${REPO_SLUG}" -D "$(dirname "${destination}")" -p "${asset_name}" \
+      || fail "failed to download release asset ${asset_name} with curl and gh"
+  else
+    fail "failed to download release asset ${asset_name}"
+  fi
+}
+
+verify_package() {
+  local package_path="$1"
+  local checksum_path="$2"
+  local expected
+  local actual
+
+  expected="$(awk 'NR == 1 { print $1 }' "${checksum_path}")"
+  [ "${#expected}" -eq 64 ] || fail "invalid checksum file: ${checksum_path}"
+  actual="$(sha256sum "${package_path}" | awk '{ print $1 }')"
+  [ "${actual}" = "${expected}" ] || fail "checksum verification failed for ${package_path}"
+  log "checksum verified for $(basename "${package_path}")"
+}
+
 install_deps() {
   log "installing runtime dependencies"
   as_root apt-get update
@@ -174,6 +213,8 @@ done
 need_cmd curl
 need_cmd tar
 need_cmd install
+need_cmd awk
+need_cmd sha256sum
 
 ARCH="$(normalize_arch)"
 PROFILE_SUFFIX="$(detect_profile_suffix)"
@@ -189,27 +230,26 @@ if [ "${INSTALL_DEPS}" = true ]; then
 fi
 
 PACKAGE_NAME="$(artifact_name "${VERSION}" "${ARCH}")"
-DOWNLOAD_URL="https://github.com/${REPO_SLUG}/releases/download/${VERSION}/${PACKAGE_NAME}"
+CHECKSUM_NAME="$(checksum_name "${VERSION}" "${ARCH}")"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 LOCAL_PACKAGE="${REPO_ROOT}/dist/${PACKAGE_NAME}"
+LOCAL_CHECKSUM="${REPO_ROOT}/dist/${CHECKSUM_NAME}"
+PACKAGE_PATH="${TMP_DIR}/${PACKAGE_NAME}"
+CHECKSUM_PATH="${TMP_DIR}/${CHECKSUM_NAME}"
 
 if [ -f "${LOCAL_PACKAGE}" ]; then
+  [ -f "${LOCAL_CHECKSUM}" ] || fail "local checksum is missing: ${LOCAL_CHECKSUM}"
   log "using local package ${LOCAL_PACKAGE}"
-  cp "${LOCAL_PACKAGE}" "${TMP_DIR}/${PACKAGE_NAME}"
+  cp "${LOCAL_PACKAGE}" "${PACKAGE_PATH}"
+  cp "${LOCAL_CHECKSUM}" "${CHECKSUM_PATH}"
 else
-  log "downloading ${DOWNLOAD_URL}"
-  if ! curl -fL "${DOWNLOAD_URL}" -o "${TMP_DIR}/${PACKAGE_NAME}"; then
-    if command -v gh >/dev/null 2>&1; then
-      log "curl download failed, trying gh release download"
-      gh release download "${VERSION}" -R "${REPO_SLUG}" -D "${TMP_DIR}" -p "${PACKAGE_NAME}" \
-        || fail "failed to download release artifact with curl and gh"
-    else
-      fail "failed to download release artifact"
-    fi
-  fi
+  download_release_asset "${PACKAGE_NAME}" "${PACKAGE_PATH}"
+  download_release_asset "${CHECKSUM_NAME}" "${CHECKSUM_PATH}"
 fi
-tar -xzf "${TMP_DIR}/${PACKAGE_NAME}" -C "${TMP_DIR}"
+
+verify_package "${PACKAGE_PATH}" "${CHECKSUM_PATH}"
+tar -xzf "${PACKAGE_PATH}" -C "${TMP_DIR}"
 
 PACKAGE_DIR="$(find "${TMP_DIR}" -mindepth 1 -maxdepth 1 -type d | head -n1)"
 [ -n "${PACKAGE_DIR}" ] || fail "failed to locate extracted package directory"
