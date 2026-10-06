@@ -105,9 +105,11 @@ CHECKSUM_PATH="dist/${PACKAGE_BASENAME}.sha256"
 log "creating ${ARCHIVE_PATH}"
 tar -C "${STAGE_DIR}" -czf "${ARCHIVE_PATH}" "${PACKAGE_BASENAME}"
 
-if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum "${ARCHIVE_PATH}" > "${CHECKSUM_PATH}"
-  log "wrote checksum ${CHECKSUM_PATH}"
-fi
+command -v sha256sum >/dev/null 2>&1 || fail "sha256sum is required to package releases"
+(
+  cd dist
+  sha256sum "${PACKAGE_BASENAME}.tar.gz" > "${PACKAGE_BASENAME}.sha256"
+)
+log "wrote checksum ${CHECKSUM_PATH}"
 
 log "package created: ${ARCHIVE_PATH}"
