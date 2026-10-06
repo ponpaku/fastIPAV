@@ -223,6 +223,11 @@ need_cmd sed
 need_cmd sha256sum
 
 ARCH="$(normalize_arch)"
+case "${ARCH}" in
+  x86_64) EXPECTED_TARGET="x86_64-unknown-linux-gnu" ;;
+  aarch64) EXPECTED_TARGET="aarch64-unknown-linux-gnu" ;;
+  *) fail "unsupported architecture: ${ARCH}" ;;
+esac
 PROFILE_SUFFIX="$(detect_profile_suffix)"
 
 if [ -z "${VERSION}" ]; then
@@ -265,11 +270,14 @@ manifest_value() {
 
 MANIFEST_NAME="$(manifest_value name)"
 MANIFEST_VERSION="$(manifest_value version)"
+MANIFEST_TARGET="$(manifest_value target)"
 MANIFEST_ARCH="$(manifest_value arch)"
 [ "${MANIFEST_NAME}" = "${PACKAGE_BASENAME}" ] \
   || fail "release manifest name mismatch: expected ${PACKAGE_BASENAME}, got ${MANIFEST_NAME:-<empty>}"
 [ "${MANIFEST_VERSION}" = "${VERSION}" ] \
   || fail "release manifest version mismatch: expected ${VERSION}, got ${MANIFEST_VERSION:-<empty>}"
+[ "${MANIFEST_TARGET}" = "${EXPECTED_TARGET}" ] \
+  || fail "release manifest target mismatch: expected ${EXPECTED_TARGET}, got ${MANIFEST_TARGET:-<empty>}"
 [ "${MANIFEST_ARCH}" = "${ARCH}" ] \
   || fail "release manifest architecture mismatch: expected ${ARCH}, got ${MANIFEST_ARCH:-<empty>}"
 
