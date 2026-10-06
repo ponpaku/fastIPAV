@@ -1,6 +1,10 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{fs, net::{IpAddr, Ipv4Addr, SocketAddr}, path::Path};
+use std::{
+    fs,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::Path,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -734,7 +738,6 @@ fn default_use_driver_timestamps() -> bool {
     true
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -747,8 +750,7 @@ mod tests {
 
     #[test]
     fn repository_config_examples_load_and_validate() {
-        let config_dir =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../configs");
+        let config_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../configs");
 
         for name in ["tx.default.toml", "tx.pi.toml", "tx.smoketest.toml"] {
             TxConfig::load(config_dir.join(name))
