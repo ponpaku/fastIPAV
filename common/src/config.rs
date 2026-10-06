@@ -129,11 +129,14 @@ impl NetworkConfig {
         if audio_enabled && self.video_port == self.audio_port {
             bail!("network.video_port and network.audio_port must differ when audio is enabled");
         }
-        if self.video_payload_type > 127 {
-            bail!("network.video_payload_type must be in the RTP range 0..=127");
+        if !(96..=127).contains(&self.video_payload_type) {
+            bail!("network.video_payload_type must be a dynamic RTP payload type in 96..=127");
         }
-        if audio_enabled && self.audio_payload_type > 127 {
-            bail!("network.audio_payload_type must be in the RTP range 0..=127");
+        if audio_enabled && !(96..=127).contains(&self.audio_payload_type) {
+            bail!("network.audio_payload_type must be a dynamic RTP payload type in 96..=127");
+        }
+        if self.ttl > 255 {
+            bail!("network.ttl must be in 0..=255");
         }
         if self.rtp_mtu == 0 {
             bail!("network.rtp_mtu must be greater than zero");
@@ -742,6 +745,20 @@ mod tests {
     fn rejects_zero_fps() {
         let mut config = RxConfig::default();
         config.video.fps = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_static_payload_type_for_h264() {
+        let mut config = TxConfig::default();
+        config.network.video_payload_type = 35;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_multicast_ttl() {
+        let mut config = TxConfig::default();
+        config.network.ttl = 256;
         assert!(config.validate().is_err());
     }
 
