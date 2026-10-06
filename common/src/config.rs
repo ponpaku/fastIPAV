@@ -427,6 +427,7 @@ impl TxConfig {
         self.http.validate()?;
         self.recovery.validate()?;
         validate_video_dimensions(self.video.width, self.video.height, self.video.fps)?;
+        validate_media_timeout(self.recovery.media_timeout_ms, self.video.fps)?;
 
         if self.video.bitrate_kbps == 0 {
             bail!("video.bitrate_kbps must be greater than zero");
@@ -498,6 +499,7 @@ impl RxConfig {
         self.http.validate()?;
         self.recovery.validate()?;
         validate_video_dimensions(self.video.width, self.video.height, self.video.fps)?;
+        validate_media_timeout(self.recovery.media_timeout_ms, self.video.fps)?;
 
         if self.audio.enabled {
             validate_audio(
@@ -539,6 +541,18 @@ fn validate_video_dimensions(width: u32, height: u32, fps: u32) -> Result<()> {
     }
     if fps > i32::MAX as u32 {
         bail!("video.fps must fit in signed 32-bit GStreamer caps");
+    }
+    Ok(())
+}
+
+fn validate_media_timeout(media_timeout_ms: u64, fps: u32) -> Result<()> {
+    let frame_interval_ms = 1_000_u64.div_ceil(fps as u64);
+    if media_timeout_ms <= frame_interval_ms {
+        bail!(
+            "recovery.media_timeout_ms must be greater than the nominal video frame interval ({} ms at {} fps)",
+            frame_interval_ms,
+            fps
+        );
     }
     Ok(())
 }
@@ -798,6 +812,15 @@ mod tests {
     fn rejects_invalid_multicast_ttl() {
         let mut config = TxConfig::default();
         config.network.ttl = 256;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_media_timeout_shorter_than_frame_interval() {
+        let mut config = TxConfig::default();
+        config.recovery.monitor_interval_ms = 1;
+        config.recovery.media_timeout_ms = 20;
+        config.video.fps = 30;
         assert!(config.validate().is_err());
     }
 
