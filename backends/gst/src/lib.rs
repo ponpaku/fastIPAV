@@ -607,7 +607,7 @@ fn preferred_h264_decoder(profile: &PlatformProfile) -> String {
 
 #[derive(Copy, Clone)]
 enum LinuxSink {
-    Sdl2,
+    Sdl,
     Wayland,
     XImage,
     AutoVideo,
@@ -622,8 +622,8 @@ fn render_linux_sink(
     let sync_value = if sync { "true" } else { "false" };
     let max_lateness_ns = (max_lateness_ms as u64) * 1_000_000;
     match sink {
-        LinuxSink::Sdl2 => format!(
-            "sdl2sink sync={} fullscreen={} qos=true max-lateness={}",
+        LinuxSink::Sdl => format!(
+            "sdlvideosink sync={} fullscreen={} qos=true max-lateness={}",
             sync_value,
             if fullscreen { "true" } else { "false" },
             max_lateness_ns
@@ -646,8 +646,8 @@ fn render_linux_sink(
 }
 
 fn preferred_linux_sink() -> LinuxSink {
-    if has_element("sdl2sink") {
-        return LinuxSink::Sdl2;
+    if has_element("sdlvideosink") {
+        return LinuxSink::Sdl;
     }
     if has_element("waylandsink") && env::var_os("WAYLAND_DISPLAY").is_some() {
         return LinuxSink::Wayland;
