@@ -457,7 +457,6 @@ fn rx_video_branch(
         .rsplit('!')
         .next()
         .unwrap_or(&sink)
-        .trim()
         .split_whitespace()
         .next()
         .unwrap_or("unknown")
