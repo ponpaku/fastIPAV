@@ -21,8 +21,8 @@ pub enum PipelineEvent {
     ClockLost,
     Latency,
     AudioUnderrun,
-    VideoBuffer { pts_ns: Option<u64> },
-    AudioBuffer { pts_ns: Option<u64> },
+    VideoBuffer,
+    AudioBuffer,
 }
 
 impl PipelineEvent {
@@ -35,8 +35,8 @@ impl PipelineEvent {
             Self::ClockLost => "pipeline lost its clock".to_string(),
             Self::Latency => "pipeline posted latency recalculation".to_string(),
             Self::AudioUnderrun => "audio underrun detected".to_string(),
-            Self::VideoBuffer { .. } => "video buffer received".to_string(),
-            Self::AudioBuffer { .. } => "audio buffer received".to_string(),
+            Self::VideoBuffer => "video buffer received".to_string(),
+            Self::AudioBuffer => "audio buffer received".to_string(),
         }
     }
 
@@ -206,14 +206,10 @@ impl GstServicePipeline {
                 element_name
             )
         })?;
-        pad.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
-            let pts_ns = info
-                .buffer()
-                .and_then(|buffer| buffer.pts())
-                .map(|pts| pts.nseconds());
+        pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
             let event = match media_kind {
-                MediaKind::Video => PipelineEvent::VideoBuffer { pts_ns },
-                MediaKind::Audio => PipelineEvent::AudioBuffer { pts_ns },
+                MediaKind::Video => PipelineEvent::VideoBuffer,
+                MediaKind::Audio => PipelineEvent::AudioBuffer,
             };
             let _ = sender.send(event);
             gst::PadProbeReturn::Ok
