@@ -253,7 +253,7 @@ fn build_tx_descriptions(config: &TxConfig, interface_name: Option<&str>) -> Pip
 
 fn build_rx_descriptions(config: &RxConfig, interface_name: Option<&str>) -> PipelineDescriptions {
     let renderer = config.video.renderer.resolve(&config.platform.profile);
-    let video = rx_video_branch(config, interface_name, &renderer);
+    let (video, renderer_name) = rx_video_branch(config, interface_name, &renderer);
     let audio = config
         .audio
         .enabled
@@ -262,7 +262,7 @@ fn build_rx_descriptions(config: &RxConfig, interface_name: Option<&str>) -> Pip
         full: join_branches(&video, audio.as_deref()),
         video,
         audio,
-        renderer: Some(renderer.as_str().to_string()),
+        renderer: Some(renderer_name),
     }
 }
 
@@ -388,7 +388,7 @@ fn rx_video_branch(
     config: &RxConfig,
     interface_name: Option<&str>,
     renderer: &RendererKind,
-) -> String {
+) -> (String, String) {
     let interface_fragment = interface_name
         .map(|name| format!(" multicast-iface={}", quoted(name)))
         .unwrap_or_default();
@@ -413,7 +413,16 @@ fn rx_video_branch(
     } else {
         config.video.sink_element.clone()
     };
-    format!(
+    let renderer_name = sink
+        .rsplit('!')
+        .next()
+        .unwrap_or(&sink)
+        .trim()
+        .split_whitespace()
+        .next()
+        .unwrap_or("unknown")
+        .to_string();
+    let pipeline = format!(
         concat!(
             "udpsrc address={group} port={port} auto-multicast=true{iface}{buffer_size} caps={caps} ",
             "! queue max-size-buffers=8 leaky=downstream ",
@@ -434,7 +443,8 @@ fn rx_video_branch(
         latency_ms = config.video.jitter_latency_ms,
         decoder = decoder,
         sink = sink,
-    )
+    );
+    (pipeline, renderer_name)
 }
 
 fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
