@@ -14,37 +14,32 @@ pub fn resolve_interface_name(selection: Option<&str>) -> Result<Option<String>>
         }
     }
 
-    let mut wired = Vec::new();
-    let mut wireless = Vec::new();
-    let mut physical = Vec::new();
+    let mut candidates = Vec::new();
 
     for name in list_interfaces()? {
         if name == "lo" || !interface_is_operational(&name) || !interface_supports_multicast(&name) {
             continue;
         }
 
-        if name.starts_with("en") || name.starts_with("eth") {
-            wired.push(name);
-        } else if name.starts_with("wl") {
-            wireless.push(name);
-        } else if interface_is_physical(&name) {
-            physical.push(name);
+        let common_physical_name = name.starts_with("en")
+            || name.starts_with("eth")
+            || name.starts_with("wl");
+        if common_physical_name || interface_is_physical(&name) {
+            candidates.push(name);
         }
     }
 
-    wired.sort();
-    wireless.sort();
-    physical.sort();
+    candidates.sort();
+    candidates.dedup();
 
-    // Prefer an active wired AV path, then active Wi-Fi, then another physical
-    // multicast-capable interface. If none is available, leave the interface
-    // unspecified and let the kernel/GStreamer routing decision apply rather
-    // than pinning the pipeline to a disconnected or virtual device.
-    Ok(wired
-        .into_iter()
-        .chain(wireless)
-        .chain(physical)
-        .next())
+    match candidates.as_slice() {
+        [] => Ok(None),
+        [only] => Ok(Some(only.clone())),
+        _ => bail!(
+            "multiple active multicast interfaces detected ({}); set network.interface explicitly",
+            candidates.join(", ")
+        ),
+    }
 }
 
 fn list_interfaces() -> Result<Vec<String>> {
