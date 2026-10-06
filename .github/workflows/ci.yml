@@ -30,11 +30,14 @@ jobs:
       - name: Install native dependencies
         run: |
           if [[ "${{ matrix.runner }}" == ubuntu-22.04* ]]; then
-            # GitHub's Jammy image carries a Microsoft APT source that can
-            # conflict with Ubuntu's libunwind-dev dependency resolution.
-            sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
+            # The hosted Jammy image preinstalls libunwind-14-dev, which
+            # conflicts with libunwind-dev required by libgstreamer1.0-dev.
+            sudo apt-get remove -y libunwind-14-dev || true
           fi
           sudo apt-get update
+          if [[ "${{ matrix.runner }}" == ubuntu-22.04* ]]; then
+            sudo apt-get install -y libunwind-dev
+          fi
           sudo apt-get install -y \
             curl \
             libgstreamer1.0-dev \
