@@ -70,13 +70,9 @@ async fn main() -> Result<()> {
         .await;
     state.set_video_enabled(true).await;
     state.set_audio_enabled(config.audio.enabled).await;
-    state
-        .set_interface(interface_name.clone())
-        .await;
+    state.set_interface(interface_name.clone()).await;
     state.set_renderer("not_applicable").await;
-    state
-        .add_note("transmitter supervisor enabled")
-        .await;
+    state.add_note("transmitter supervisor enabled").await;
     if config.audio.enabled {
         state
             .add_note("audio branch enabled with ALSA -> RTP/L16")
@@ -93,10 +89,7 @@ async fn main() -> Result<()> {
     run_result
 }
 
-async fn run_supervisor(
-    config: TxConfig,
-    state: SharedServiceState,
-) -> Result<()> {
+async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<()> {
     loop {
         let interface_name = resolve_interface_name(config.network.interface_override())
             .context("failed to resolve multicast interface")?;
