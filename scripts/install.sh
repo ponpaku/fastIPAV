@@ -210,6 +210,11 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+if [ "${INSTALL_DEPS}" = true ]; then
+  need_cmd apt-get
+  install_deps
+fi
+
 need_cmd curl
 need_cmd tar
 need_cmd install
@@ -225,10 +230,6 @@ if [ -z "${VERSION}" ]; then
 fi
 
 [ -n "${VERSION}" ] || fail "failed to resolve release version"
-
-if [ "${INSTALL_DEPS}" = true ]; then
-  install_deps
-fi
 
 PACKAGE_NAME="$(artifact_name "${VERSION}" "${ARCH}")"
 CHECKSUM_NAME="$(checksum_name "${VERSION}" "${ARCH}")"
