@@ -469,6 +469,7 @@ fn rx_video_branch(
             "! h264parse ",
             "! {decoder} ",
             "! videoconvert ",
+            "! video/x-raw,width={width},height={height},framerate={fps}/1 ",
             "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ",
             "! identity name=video_monitor silent=true ",
             "! {sink}"
@@ -480,6 +481,9 @@ fn rx_video_branch(
         caps = quoted(&caps),
         latency_ms = config.video.jitter_latency_ms,
         decoder = decoder,
+        width = config.video.width,
+        height = config.video.height,
+        fps = config.video.fps,
         sink = sink,
     );
     (pipeline, renderer_name)
