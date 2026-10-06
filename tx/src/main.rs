@@ -148,6 +148,19 @@ async fn run_supervisor(
                     return Ok(());
                 }
                 _ = watchdog.tick() => {
+                    match resolve_interface_name(config.network.interface_override()) {
+                        Ok(current) if current != interface_name => {
+                            break format!(
+                                "multicast interface changed from {:?} to {:?}",
+                                interface_name, current
+                            );
+                        }
+                        Err(err) => {
+                            break format!("multicast interface unavailable: {}", err);
+                        }
+                        _ => {}
+                    }
+
                     if !video_ready && started.elapsed() > media_timeout {
                         break format!(
                             "no video buffers received within {} ms",
