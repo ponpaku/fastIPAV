@@ -84,15 +84,20 @@ async fn main() -> Result<()> {
     state.set_audio_enabled(config.audio.enabled).await;
     state.set_interface(interface_name.clone()).await;
     state.set_renderer(resolved_renderer.clone()).await;
-    state.set_jitter_buffer_ms(config.video.jitter_latency_ms).await;
+    state
+        .set_jitter_buffer_ms(config.video.jitter_latency_ms)
+        .await;
     if config.audio.enabled {
-        state.set_audio_jitter_buffer_ms(config.audio.jitter_latency_ms).await;
+        state
+            .set_audio_jitter_buffer_ms(config.audio.jitter_latency_ms)
+            .await;
     }
     seed_estimated_metrics(&config, &state).await;
-    state
-        .add_note("receiver supervisor enabled")
-        .await;
-    if matches!(config.video.renderer.resolve(&config.platform.profile), RendererKind::KmsDrm) {
+    state.add_note("receiver supervisor enabled").await;
+    if matches!(
+        config.video.renderer.resolve(&config.platform.profile),
+        RendererKind::KmsDrm
+    ) {
         state
             .add_note("receiver is configured for KMS/DRM-oriented rendering")
             .await;
@@ -108,10 +113,7 @@ async fn main() -> Result<()> {
     run_result
 }
 
-async fn run_supervisor(
-    config: RxConfig,
-    state: SharedServiceState,
-) -> Result<()> {
+async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<()> {
     loop {
         let interface_name = resolve_interface_name(config.network.interface_override())
             .context("failed to resolve multicast interface")?;
@@ -366,7 +368,8 @@ async fn seed_estimated_metrics(config: &RxConfig, state: &SharedServiceState) {
     let estimate = config.video.jitter_latency_ms as f64 + frame_interval_ms + renderer_budget_ms;
     state.set_latency(estimate).await;
     if config.audio.enabled {
-        let audio_offset = config.audio.jitter_latency_ms as f64 - config.video.jitter_latency_ms as f64;
+        let audio_offset =
+            config.audio.jitter_latency_ms as f64 - config.video.jitter_latency_ms as f64;
         state.set_audio_offset(audio_offset).await;
         state.set_av_sync(audio_offset).await;
         state
