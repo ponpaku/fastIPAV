@@ -138,8 +138,11 @@ impl NetworkConfig {
         if self.ttl > 255 {
             bail!("network.ttl must be in 0..=255");
         }
-        if self.rtp_mtu == 0 {
-            bail!("network.rtp_mtu must be greater than zero");
+        if self.rtp_mtu < 28 {
+            bail!("network.rtp_mtu must be at least 28 bytes");
+        }
+        if self.receive_buffer_size > i32::MAX as u32 {
+            bail!("network.receive_buffer_size must fit in a signed 32-bit GStreamer property");
         }
         Ok(())
     }
@@ -776,6 +779,20 @@ mod tests {
     fn rejects_invalid_multicast_ttl() {
         let mut config = TxConfig::default();
         config.network.ttl = 256;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_too_small_rtp_mtu() {
+        let mut config = TxConfig::default();
+        config.network.rtp_mtu = 27;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_receive_buffer() {
+        let mut config = RxConfig::default();
+        config.network.receive_buffer_size = (i32::MAX as u32) + 1;
         assert!(config.validate().is_err());
     }
 
