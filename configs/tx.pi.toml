@@ -21,6 +21,7 @@ port = 8081
 [recovery]
 restart_backoff_ms = 1000
 monitor_interval_ms = 250
+media_timeout_ms = 5000
 
 [video]
 source_caps = "image/jpeg,width=1920,height=1080,framerate=30/1"
