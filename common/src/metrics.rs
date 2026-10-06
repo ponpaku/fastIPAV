@@ -110,6 +110,7 @@ impl SharedServiceState {
         drop(health);
         let mut stats = self.stats.write().await;
         stats.state = "running".to_string();
+        stats.last_error = None;
         push_note(&mut stats.notes, message);
     }
 
