@@ -262,6 +262,7 @@ as_root install -m 0755 "${PACKAGE_DIR}/bin/rx" "${PREFIX}/bin/rx"
 
 log "installing shared assets to ${SHARE_DIR}"
 as_root install -d "${SHARE_DIR}/configs" "${SHARE_DIR}/systemd"
+as_root install -m 0644 "${PACKAGE_DIR}/LICENSE" "${SHARE_DIR}/LICENSE"
 as_root cp -f "${PACKAGE_DIR}/configs/"*.toml "${SHARE_DIR}/configs/"
 as_root cp -f "${PACKAGE_DIR}/systemd/"*.service "${SHARE_DIR}/systemd/"
 
