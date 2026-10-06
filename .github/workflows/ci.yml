@@ -56,9 +56,16 @@ jobs:
         run: |
           curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
           echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.cargo/bin/rustup" component add rustfmt clippy
 
       - name: Validate shell scripts
         run: bash -n scripts/*.sh tools/*.sh
+
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Check workspace
         run: cargo check --workspace --all-targets --locked
