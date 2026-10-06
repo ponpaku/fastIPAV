@@ -186,18 +186,9 @@ async fn run_supervisor(
                         _ => {}
                     }
 
-                    if !video_ready && started.elapsed() > media_timeout {
-                        break format!(
-                            "no video buffers received within {} ms",
-                            config.recovery.media_timeout_ms
-                        );
-                    }
-                    if config.audio.enabled && !audio_ready && started.elapsed() > media_timeout {
-                        break format!(
-                            "no audio buffers received within {} ms",
-                            config.recovery.media_timeout_ms
-                        );
-                    }
+                    // A receiver is allowed to start before its transmitter.
+                    // Stay unhealthy/waiting until the first media arrives instead
+                    // of rebuilding an otherwise valid UDP pipeline repeatedly.
                     if video_ready && last_video_buffer.elapsed() > media_timeout {
                         break format!(
                             "video stream stalled for more than {} ms",
