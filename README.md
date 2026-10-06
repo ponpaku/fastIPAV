@@ -6,8 +6,8 @@
 ## 推奨 OS
 
 - Raspberry Pi: `Raspberry Pi OS Bookworm 64bit`
-- Linux PC: `Ubuntu LTS`
-  - 現時点の開発確認は Ubuntu 24.04 LTS 系を基準にしている
+- Linux PC: `Ubuntu 22.04 LTS` 以降
+  - CI は Ubuntu 22.04 / 24.04 x86_64 と Ubuntu 22.04 arm64 で確認する
 
 ## 配布方針
 
@@ -280,7 +280,7 @@ cargo build
 ## 既知の制約
 
 - `capture-to-display` は現状、設定値ベースの初期推定を返す
-- RXではmedia bufferのPTS差から観測上のA/V offsetを更新するが、video/audioは独立RTPストリームで、RTCP/rtpbinによるsender-clock同期はまだ実装していない。長時間・高精度のA/V同期が必要な用途では追加実装が必要
+- `estimated_av_sync_ms` / `estimated_audio_offset_ms` は設定したvideo/audio jitter buffer差に基づく推定値。video/audioは独立RTPストリームで、RTCP/rtpbinによるsender-clock同期はまだ実装していないため、実測A/V同期値としては扱わない
 - 実機の遅延検証と UVC 入力確認は別途必要
 - Raspberry Pi / Linux PC 向けの hardware codec 最適化は今後の調整余地がある
 - systemdのRXをLinux desktopで使う場合、display sessionの環境や権限は環境依存。KMS/DRMを使うRaspberry Piとは条件が異なる
@@ -291,9 +291,11 @@ cargo build
 Pull Request と `main` への push では、GitHub Actions で以下を実行する。
 
 - shell script の構文検証
+- `cargo fmt --check` / `clippy -D warnings`
 - workspace 全体の `cargo check`
-- unit test
+- unit test（配布する全TOMLとproduction sink/pipelineのparse検証を含む）
 - GStreamer を使った tx/rx loopback smoke test（映像・音声の実buffer通過を確認）
+- Ubuntu 22.04 x86_64 / arm64 でrelease package生成・checksum・manifest・local install検証
 
 ## License
 
