@@ -126,13 +126,14 @@ async fn run_supervisor(
 
         state.set_state("starting_pipeline").await;
         let mut events = pipeline.start()?;
-        state.mark_ready("rx pipeline is running").await;
-        info!("rx pipeline launched");
+        state.set_state("waiting_for_video").await;
+        info!("rx pipeline launched; waiting for first video buffer");
         info!("rx video pipeline: {}", pipeline.descriptions().video);
         if let Some(audio_pipeline) = &pipeline.descriptions().audio {
             info!("rx audio pipeline: {}", audio_pipeline);
         }
 
+        let mut video_ready = false;
         let restart_reason = loop {
             tokio::select! {
                 _ = shutdown_signal() => {
@@ -147,6 +148,11 @@ async fn run_supervisor(
                     let Some(event) = event else {
                         break "pipeline event channel closed".to_string();
                     };
+                    if matches!(&event, PipelineEvent::VideoBuffer) && !video_ready {
+                        video_ready = true;
+                        state.mark_ready("rx video is flowing").await;
+                        info!("rx received first video buffer");
+                    }
                     if handle_rx_event(&state, &event).await {
                         break event.message();
                     }
@@ -222,6 +228,14 @@ async fn handle_rx_event(state: &SharedServiceState, event: &PipelineEvent) -> b
             state
                 .add_note("rx detected audio underrun warning from pipeline")
                 .await;
+            false
+        }
+        PipelineEvent::VideoBuffer => {
+            state.bump_frames_total().await;
+            false
+        }
+        PipelineEvent::AudioBuffer => {
+            state.bump_audio_chunks_total().await;
             false
         }
         PipelineEvent::Error(message) => {
