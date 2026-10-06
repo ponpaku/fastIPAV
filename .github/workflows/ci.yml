@@ -72,10 +72,10 @@ jobs:
       - name: Test release packaging and local install
         if: matrix.name == 'ubuntu-22.04-x86_64'
         run: |
-          ./scripts/package-release.sh --version v0.1.0
+          bash scripts/package-release.sh --version v0.1.0
 
           install_root="$(mktemp -d)"
-          ./scripts/install.sh \
+          bash scripts/install.sh \
             --version v0.1.0 \
             --prefix "${install_root}/usr/local" \
             --config-dir "${install_root}/etc/avoverip" \
