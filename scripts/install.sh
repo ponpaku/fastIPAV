@@ -223,6 +223,8 @@ need_cmd grep
 need_cmd sed
 need_cmd sha256sum
 
+[ "$(uname -s)" = "Linux" ] || fail "this installer supports Linux only"
+
 for path_value in "${PREFIX}" "${CONFIG_DIR}" "${SYSTEMD_DIR}"; do
   case "${path_value}" in
     /*) ;;
