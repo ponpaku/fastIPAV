@@ -269,11 +269,11 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
     } else {
         config.video.encoder_element.clone()
     };
-    let encoder = if encoder
+    let encoder_is_x264 = encoder
         .split_whitespace()
         .next()
-        .is_some_and(|name| name == "x264enc")
-    {
+        .is_some_and(|name| name == "x264enc");
+    let encoder = if encoder_is_x264 {
         format!(
             "{} bitrate={} key-int-max={} bframes=0 aud=true byte-stream=true",
             encoder, config.video.bitrate_kbps, config.video.gop
@@ -283,6 +283,11 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
         // encoder_element as a complete configured fragment instead of
         // appending x264-only properties that would make the pipeline invalid.
         encoder
+    };
+    let encoder_input_caps = if encoder_is_x264 {
+        " ! video/x-raw,format=I420"
+    } else {
+        ""
     };
     let source_caps = if config.video.source_caps.trim().is_empty() {
         format!(
@@ -302,8 +307,7 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
             "{source} ",
             "! {source_caps}{source_decoder} ",
             "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ",
-            "! videoconvert ",
-            "! video/x-raw,format=I420 ",
+            "! videoconvert{encoder_input_caps} ",
             "! {encoder} ",
             "! h264parse config-interval=-1 ",
             "! identity name=video_monitor silent=true ",
@@ -313,6 +317,7 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
         source = source,
         source_caps = source_caps,
         source_decoder = source_decoder,
+        encoder_input_caps = encoder_input_caps,
         encoder = encoder,
         payload_type = config.network.video_payload_type,
         mtu = config.network.rtp_mtu,
