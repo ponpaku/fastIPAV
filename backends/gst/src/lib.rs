@@ -9,6 +9,7 @@ use std::{
         Arc,
     },
     thread,
+    time::Instant,
 };
 use tokio::sync::mpsc;
 
@@ -23,8 +24,8 @@ pub enum PipelineEvent {
     ClockLost,
     Latency,
     AudioUnderrun,
-    VideoBuffer,
-    AudioBuffer,
+    VideoBuffer { observed_at: Instant },
+    AudioBuffer { observed_at: Instant },
 }
 
 impl PipelineEvent {
@@ -37,8 +38,8 @@ impl PipelineEvent {
             Self::ClockLost => "pipeline lost its clock".to_string(),
             Self::Latency => "pipeline posted latency recalculation".to_string(),
             Self::AudioUnderrun => "audio underrun detected".to_string(),
-            Self::VideoBuffer => "video buffer received".to_string(),
-            Self::AudioBuffer => "audio buffer received".to_string(),
+            Self::VideoBuffer { .. } => "video buffer received".to_string(),
+            Self::AudioBuffer { .. } => "audio buffer received".to_string(),
         }
     }
 
@@ -218,9 +219,10 @@ impl GstServicePipeline {
             )
         })?;
         pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+            let observed_at = Instant::now();
             let event = match media_kind {
-                MediaKind::Video => PipelineEvent::VideoBuffer,
-                MediaKind::Audio => PipelineEvent::AudioBuffer,
+                MediaKind::Video => PipelineEvent::VideoBuffer { observed_at },
+                MediaKind::Audio => PipelineEvent::AudioBuffer { observed_at },
             };
             // Buffer events are heartbeats/counters. Never block a GStreamer
             // streaming thread; if the consumer is temporarily behind, dropping
