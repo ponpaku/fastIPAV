@@ -7,7 +7,7 @@ use avoverip_common::{
     observability::{init_tracing, spawn_http_server},
 };
 use clap::Parser;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 #[derive(Debug, Parser)]
@@ -56,6 +56,7 @@ async fn main() -> Result<()> {
     if let Some(http_port) = cli.http_port {
         config.http.port = http_port;
     }
+    config.validate()?;
 
     let interface_name = resolve_interface_name(config.network.interface_override())
         .context("failed to resolve multicast interface")?;
@@ -87,17 +88,19 @@ async fn main() -> Result<()> {
     }
 
     let server = spawn_http_server(config.http.socket_addr()?, state.clone()).await?;
-    let run_result = run_supervisor(config, interface_name, state.clone()).await;
+    let run_result = run_supervisor(config, state.clone()).await;
     server.abort();
     run_result
 }
 
 async fn run_supervisor(
     config: TxConfig,
-    interface_name: Option<String>,
     state: SharedServiceState,
 ) -> Result<()> {
     loop {
+        let interface_name = resolve_interface_name(config.network.interface_override())
+            .context("failed to resolve multicast interface")?;
+        state.set_interface(interface_name.clone()).await;
         let mut pipeline = GstServicePipeline::for_tx(&config, interface_name.as_deref())?;
         state
             .set_pipeline_descriptions(
@@ -107,14 +110,33 @@ async fn run_supervisor(
             .await;
         state.set_state("starting_pipeline").await;
         let mut events = pipeline.start()?;
-        state.set_state("waiting_for_video").await;
-        info!("tx pipeline launched; waiting for first video buffer");
+        if config.audio.enabled {
+            state
+                .mark_waiting("waiting_for_media", "tx waiting for video and audio")
+                .await;
+            info!("tx pipeline launched; waiting for video and audio buffers");
+        } else {
+            state
+                .mark_waiting("waiting_for_video", "tx waiting for video")
+                .await;
+            info!("tx pipeline launched; waiting for first video buffer");
+        }
         info!("tx video pipeline: {}", pipeline.descriptions().video);
         if let Some(audio_pipeline) = &pipeline.descriptions().audio {
             info!("tx audio pipeline: {}", audio_pipeline);
         }
 
+        let started = Instant::now();
+        let mut last_video_buffer = started;
+        let mut last_audio_buffer = started;
         let mut video_ready = false;
+        let mut audio_ready = !config.audio.enabled;
+        let mut service_ready = false;
+        let media_timeout = Duration::from_millis(config.recovery.media_timeout_ms);
+        let mut watchdog =
+            tokio::time::interval(Duration::from_millis(config.recovery.monitor_interval_ms));
+        watchdog.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         let restart_reason = loop {
             tokio::select! {
                 _ = shutdown_signal() => {
@@ -125,14 +147,56 @@ async fn run_supervisor(
                     }
                     return Ok(());
                 }
+                _ = watchdog.tick() => {
+                    if !video_ready && started.elapsed() > media_timeout {
+                        break format!(
+                            "no video buffers received within {} ms",
+                            config.recovery.media_timeout_ms
+                        );
+                    }
+                    if config.audio.enabled && !audio_ready && started.elapsed() > media_timeout {
+                        break format!(
+                            "no audio buffers received within {} ms",
+                            config.recovery.media_timeout_ms
+                        );
+                    }
+                    if video_ready && last_video_buffer.elapsed() > media_timeout {
+                        break format!(
+                            "video stream stalled for more than {} ms",
+                            config.recovery.media_timeout_ms
+                        );
+                    }
+                    if config.audio.enabled && audio_ready && last_audio_buffer.elapsed() > media_timeout {
+                        break format!(
+                            "audio stream stalled for more than {} ms",
+                            config.recovery.media_timeout_ms
+                        );
+                    }
+                }
                 event = events.recv() => {
                     let Some(event) = event else {
                         break "pipeline event channel closed".to_string();
                     };
-                    if matches!(&event, PipelineEvent::VideoBuffer) && !video_ready {
-                        video_ready = true;
-                        state.mark_ready("tx video is flowing").await;
-                        info!("tx received first video buffer");
+                    match &event {
+                        PipelineEvent::VideoBuffer => {
+                            last_video_buffer = Instant::now();
+                            if !video_ready {
+                                video_ready = true;
+                                info!("tx received first video buffer");
+                            }
+                        }
+                        PipelineEvent::AudioBuffer => {
+                            last_audio_buffer = Instant::now();
+                            if !audio_ready {
+                                audio_ready = true;
+                                info!("tx received first audio buffer");
+                            }
+                        }
+                        _ => {}
+                    }
+                    if !service_ready && video_ready && audio_ready {
+                        service_ready = true;
+                        state.mark_ready("tx media is flowing").await;
                     }
                     if handle_tx_event(&state, &event).await {
                         break event.message();
