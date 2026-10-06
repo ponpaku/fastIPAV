@@ -6,32 +6,22 @@ use std::{
     path::Path,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlatformProfile {
+    #[default]
     Auto,
     LinuxPc,
     RaspberryPi,
 }
 
-impl Default for PlatformProfile {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RendererKind {
+    #[default]
     Auto,
     Sdl,
     KmsDrm,
-}
-
-impl Default for RendererKind {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 impl RendererKind {
