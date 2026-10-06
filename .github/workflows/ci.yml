@@ -70,7 +70,7 @@ jobs:
         run: bash scripts/smoke-test.sh
 
       - name: Test release packaging and local install
-        if: matrix.name == 'ubuntu-22.04-x86_64'
+        if: startsWith(matrix.name, 'ubuntu-22.04-')
         run: |
           workspace_version="$(grep -m1 '^version = "' Cargo.toml | cut -d'"' -f2)"
           release_tag="v${workspace_version}"
