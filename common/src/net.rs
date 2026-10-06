@@ -14,7 +14,10 @@ pub fn resolve_interface_name(selection: Option<&str>) -> Result<Option<String>>
                 bail!("requested interface {} is not operational", explicit);
             }
             if explicit != "lo" && !interface_supports_multicast(explicit) {
-                bail!("requested interface {} does not support multicast", explicit);
+                bail!(
+                    "requested interface {} does not support multicast",
+                    explicit
+                );
             }
             return Ok(Some(explicit.to_string()));
         }
@@ -23,13 +26,13 @@ pub fn resolve_interface_name(selection: Option<&str>) -> Result<Option<String>>
     let mut candidates = Vec::new();
 
     for name in list_interfaces()? {
-        if name == "lo" || !interface_is_operational(&name) || !interface_supports_multicast(&name) {
+        if name == "lo" || !interface_is_operational(&name) || !interface_supports_multicast(&name)
+        {
             continue;
         }
 
-        let common_physical_name = name.starts_with("en")
-            || name.starts_with("eth")
-            || name.starts_with("wl");
+        let common_physical_name =
+            name.starts_with("en") || name.starts_with("eth") || name.starts_with("wl");
         if common_physical_name || interface_is_physical(&name) {
             candidates.push(name);
         }
@@ -64,14 +67,13 @@ fn interface_exists(name: &str) -> bool {
 }
 
 fn interface_is_operational(name: &str) -> bool {
-    let state = fs::read_to_string(format!("/sys/class/net/{}/operstate", name))
-        .unwrap_or_default();
+    let state =
+        fs::read_to_string(format!("/sys/class/net/{}/operstate", name)).unwrap_or_default();
     matches!(state.trim(), "up" | "unknown")
 }
 
 fn interface_supports_multicast(name: &str) -> bool {
-    let flags = fs::read_to_string(format!("/sys/class/net/{}/flags", name))
-        .unwrap_or_default();
+    let flags = fs::read_to_string(format!("/sys/class/net/{}/flags", name)).unwrap_or_default();
     let flags = flags.trim().trim_start_matches("0x");
     u32::from_str_radix(flags, 16)
         .map(|value| value & IFF_MULTICAST != 0)
