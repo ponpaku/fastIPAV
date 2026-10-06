@@ -29,6 +29,11 @@ jobs:
 
       - name: Install native dependencies
         run: |
+          if [[ "${{ matrix.runner }}" == ubuntu-22.04* ]]; then
+            # GitHub's Jammy image carries a Microsoft APT source that can
+            # conflict with Ubuntu's libunwind-dev dependency resolution.
+            sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
+          fi
           sudo apt-get update
           sudo apt-get install -y \
             curl \
