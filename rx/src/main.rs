@@ -313,10 +313,11 @@ async fn handle_rx_event(state: &SharedServiceState, event: &PipelineEvent) -> b
             let lower = message.to_ascii_lowercase();
             state.add_note(message.clone()).await;
             if lower.contains("late") || lower.contains("dropped") {
-                state.bump_dropped_frames().await;
-            }
-            if lower.contains("audio") && lower.contains("drop") {
-                state.bump_dropped_audio_chunks().await;
+                if lower.contains("audio") || lower.contains("alsa") {
+                    state.bump_dropped_audio_chunks().await;
+                } else {
+                    state.bump_dropped_frames().await;
+                }
             }
             false
         }
