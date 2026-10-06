@@ -21,6 +21,8 @@ pub enum PipelineEvent {
     ClockLost,
     Latency,
     AudioUnderrun,
+    VideoBuffer,
+    AudioBuffer,
 }
 
 impl PipelineEvent {
@@ -33,6 +35,8 @@ impl PipelineEvent {
             Self::ClockLost => "pipeline lost its clock".to_string(),
             Self::Latency => "pipeline posted latency recalculation".to_string(),
             Self::AudioUnderrun => "audio underrun detected".to_string(),
+            Self::VideoBuffer => "video buffer received".to_string(),
+            Self::AudioBuffer => "audio buffer received".to_string(),
         }
     }
 
@@ -80,11 +84,16 @@ impl GstServicePipeline {
             .pipeline
             .bus()
             .ok_or_else(|| anyhow!("{} pipeline bus is not available", self.name))?;
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.install_buffer_probe("video_monitor", PipelineEvent::VideoBuffer, tx.clone())?;
+        if self.descriptions.audio.is_some() {
+            self.install_buffer_probe("audio_monitor", PipelineEvent::AudioBuffer, tx.clone())?;
+        }
+
         self.pipeline
             .set_state(gst::State::Playing)
             .map_err(|err| anyhow!("failed to start {} pipeline: {:?}", self.name, err))?;
 
-        let (tx, rx) = mpsc::unbounded_channel();
         let stop_flag = Arc::clone(&self.stop_flag);
         let pipeline_name = self.name.to_string();
         let bus_poll_interval_ms = self.bus_poll_interval_ms.max(1);
@@ -153,6 +162,27 @@ impl GstServicePipeline {
         });
         self.bus_thread = Some(bus_thread);
         Ok(rx)
+    }
+
+    fn install_buffer_probe(
+        &self,
+        element_name: &str,
+        event: PipelineEvent,
+        sender: mpsc::UnboundedSender<PipelineEvent>,
+    ) -> Result<()> {
+        let element = self
+            .pipeline
+            .by_name(element_name)
+            .ok_or_else(|| anyhow!("{} pipeline element {} is not available", self.name, element_name))?;
+        let pad = element
+            .static_pad("src")
+            .ok_or_else(|| anyhow!("{} pipeline element {} has no src pad", self.name, element_name))?;
+        pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+            let _ = sender.send(event.clone());
+            gst::PadProbeReturn::Ok
+        })
+        .ok_or_else(|| anyhow!("failed to install buffer probe on {}", element_name))?;
+        Ok(())
     }
 
     pub fn stop(&mut self) -> Result<()> {
@@ -261,6 +291,7 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
             "! video/x-raw,format=I420 ",
             "! {encoder} bitrate={bitrate_kbps} key-int-max={gop} bframes=0 aud=true byte-stream=true ",
             "! h264parse config-interval=-1 ",
+            "! identity name=video_monitor silent=true ",
             "! rtph264pay pt={payload_type} config-interval=1 mtu={mtu} ",
             "! udpsink host={group} port={port} auto-multicast=true ttl-mc={ttl} sync=false async=false{iface}"
         ),
@@ -290,6 +321,7 @@ fn tx_audio_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
             "! audioconvert ",
             "! audioresample ",
             "! audio/x-raw,format=S16BE,layout=interleaved,rate={sample_rate},channels={channels} ",
+            "! identity name=audio_monitor silent=true ",
             "! rtpL16pay pt={payload_type} mtu={mtu} ",
             "! udpsink host={group} port={port} auto-multicast=true ttl-mc={ttl} sync=false async=false{iface}"
         ),
@@ -350,6 +382,7 @@ fn rx_video_branch(
             "! h264parse ",
             "! {decoder} ",
             "! videoconvert ",
+            "! identity name=video_monitor silent=true ",
             "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ",
             "! {sink}"
         ),
@@ -388,6 +421,7 @@ fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
             "! audioconvert ",
             "! audioresample ",
             "! audio/x-raw,format=S16LE,layout=interleaved,rate={sample_rate},channels={channels} ",
+            "! identity name=audio_monitor silent=true ",
             "! queue leaky=downstream max-size-buffers=8 max-size-bytes=0 max-size-time=0 ",
             "! alsasink device={device} sync={sync} async=false provide-clock=false buffer-time={buffer_time_us} latency-time={latency_time_us}"
         ),
