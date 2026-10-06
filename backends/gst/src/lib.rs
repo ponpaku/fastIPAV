@@ -447,7 +447,7 @@ fn rx_video_branch(
             "udpsrc address={group} port={port} auto-multicast=true{iface}{buffer_size} caps={caps} ",
             "! queue max-size-buffers=8 leaky=downstream ",
             "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
-            "! rtph264depay ",
+            "! rtph264depay wait-for-keyframe=true ",
             "! h264parse ",
             "! {decoder} ",
             "! videoconvert ",
