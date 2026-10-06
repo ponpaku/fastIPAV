@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
@@ -42,7 +42,9 @@ jobs:
       - name: Verify tag commit is on main
         run: |
           git fetch origin main
-          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main || {
+          tag_commit="$(git rev-list -n1 "${GITHUB_REF_NAME}")"
+          test -n "${tag_commit}"
+          git merge-base --is-ancestor "${tag_commit}" origin/main || {
             echo "release tag must point to a commit already merged into main" >&2
             exit 1
           }
@@ -115,6 +117,8 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - name: Download package artifacts
         uses: actions/download-artifact@v8
