@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use avoverip_backend_gst::{GstServicePipeline, PipelineEvent};
 use avoverip_common::{
     config::TxConfig,
@@ -83,10 +83,19 @@ async fn main() -> Result<()> {
             .await;
     }
 
-    let server = spawn_http_server(config.http.socket_addr()?, state.clone()).await?;
-    let run_result = run_supervisor(config, state.clone()).await;
-    server.abort();
-    run_result
+    let mut server = spawn_http_server(config.http.socket_addr()?, state.clone()).await?;
+    tokio::select! {
+        run_result = run_supervisor(config, state.clone()) => {
+            server.abort();
+            run_result
+        }
+        server_result = &mut server => {
+            match server_result {
+                Ok(()) => Err(anyhow!("observability server exited unexpectedly")),
+                Err(err) => Err(anyhow!("observability server task failed: {err}")),
+            }
+        }
+    }
 }
 
 async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<()> {
