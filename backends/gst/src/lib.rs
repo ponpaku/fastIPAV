@@ -21,8 +21,8 @@ pub enum PipelineEvent {
     ClockLost,
     Latency,
     AudioUnderrun,
-    VideoBuffer,
-    AudioBuffer,
+    VideoBuffer { pts_ns: Option<u64> },
+    AudioBuffer { pts_ns: Option<u64> },
 }
 
 impl PipelineEvent {
@@ -35,8 +35,8 @@ impl PipelineEvent {
             Self::ClockLost => "pipeline lost its clock".to_string(),
             Self::Latency => "pipeline posted latency recalculation".to_string(),
             Self::AudioUnderrun => "audio underrun detected".to_string(),
-            Self::VideoBuffer => "video buffer received".to_string(),
-            Self::AudioBuffer => "audio buffer received".to_string(),
+            Self::VideoBuffer { .. } => "video buffer received".to_string(),
+            Self::AudioBuffer { .. } => "audio buffer received".to_string(),
         }
     }
 
@@ -51,6 +51,12 @@ pub struct PipelineDescriptions {
     pub video: String,
     pub audio: Option<String>,
     pub renderer: Option<String>,
+}
+
+#[derive(Debug, Copy, Clone)]
+enum MediaKind {
+    Video,
+    Audio,
 }
 
 pub struct GstServicePipeline {
@@ -85,9 +91,9 @@ impl GstServicePipeline {
             .bus()
             .ok_or_else(|| anyhow!("{} pipeline bus is not available", self.name))?;
         let (tx, rx) = mpsc::unbounded_channel();
-        self.install_buffer_probe("video_monitor", PipelineEvent::VideoBuffer, tx.clone())?;
+        self.install_buffer_probe("video_monitor", MediaKind::Video, tx.clone())?;
         if self.descriptions.audio.is_some() {
-            self.install_buffer_probe("audio_monitor", PipelineEvent::AudioBuffer, tx.clone())?;
+            self.install_buffer_probe("audio_monitor", MediaKind::Audio, tx.clone())?;
         }
 
         self.pipeline
@@ -167,7 +173,7 @@ impl GstServicePipeline {
     fn install_buffer_probe(
         &self,
         element_name: &str,
-        event: PipelineEvent,
+        media_kind: MediaKind,
         sender: mpsc::UnboundedSender<PipelineEvent>,
     ) -> Result<()> {
         let element = self
@@ -177,8 +183,16 @@ impl GstServicePipeline {
         let pad = element
             .static_pad("src")
             .ok_or_else(|| anyhow!("{} pipeline element {} has no src pad", self.name, element_name))?;
-        pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
-            let _ = sender.send(event.clone());
+        pad.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
+            let pts_ns = info
+                .buffer()
+                .and_then(|buffer| buffer.pts())
+                .map(|pts| pts.nseconds());
+            let event = match media_kind {
+                MediaKind::Video => PipelineEvent::VideoBuffer { pts_ns },
+                MediaKind::Audio => PipelineEvent::AudioBuffer { pts_ns },
+            };
+            let _ = sender.send(event);
             gst::PadProbeReturn::Ok
         })
         .ok_or_else(|| anyhow!("failed to install buffer probe on {}", element_name))?;
@@ -433,12 +447,14 @@ fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
         String::new()
     };
     let sink = if config.audio.sink_element.trim().is_empty() {
+        let max_lateness_ns = (config.audio.late_threshold_ms as u64) * 1_000_000;
         format!(
-            "alsasink device={} sync={} async=false provide-clock=false buffer-time={} latency-time={}",
+            "alsasink device={} sync={} async=false provide-clock=false buffer-time={} latency-time={} qos=true max-lateness={}",
             quoted(&config.audio.device),
             if config.audio.sync { "true" } else { "false" },
             config.audio.buffer_time_us,
             config.audio.latency_time_us,
+            max_lateness_ns,
         )
     } else {
         config.audio.sink_element.clone()
