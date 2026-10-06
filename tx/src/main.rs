@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
         .await;
     state.set_renderer("not_applicable").await;
     state
-        .add_note("phase1/2 transmitter supervisor enabled")
+        .add_note("transmitter supervisor enabled")
         .await;
     if config.audio.enabled {
         state
