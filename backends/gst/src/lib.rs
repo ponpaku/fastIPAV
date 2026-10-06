@@ -217,6 +217,9 @@ impl GstServicePipeline {
 
     pub fn stop(&mut self) -> Result<()> {
         self.stop_flag.store(true, Ordering::Relaxed);
+        if let Some(bus) = self.pipeline.bus() {
+            bus.set_flushing(true);
+        }
         if let Some(bus_thread) = self.bus_thread.take() {
             let _ = bus_thread.join();
         }
