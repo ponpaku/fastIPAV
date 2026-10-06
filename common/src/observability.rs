@@ -1,6 +1,6 @@
 use crate::metrics::SharedServiceState;
 use anyhow::{Context, Result};
-use axum::{extract::State, routing::get, Json, Router};
+use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
 use std::net::SocketAddr;
 use tokio::{net::TcpListener, task::JoinHandle};
 use tracing::{error, info};
@@ -34,8 +34,16 @@ pub async fn spawn_http_server(
     }))
 }
 
-async fn healthz(State(state): State<SharedServiceState>) -> Json<crate::metrics::HealthSnapshot> {
-    Json(state.health_snapshot().await)
+async fn healthz(
+    State(state): State<SharedServiceState>,
+) -> (StatusCode, Json<crate::metrics::HealthSnapshot>) {
+    let snapshot = state.health_snapshot().await;
+    let status = if snapshot.ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (status, Json(snapshot))
 }
 
 async fn stats(State(state): State<SharedServiceState>) -> Json<crate::metrics::StatsSnapshot> {
