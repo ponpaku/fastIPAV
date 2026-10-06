@@ -230,7 +230,15 @@ for path_value in "${PREFIX}" "${CONFIG_DIR}" "${SYSTEMD_DIR}"; do
     /*) ;;
     *) fail "install paths must be absolute: ${path_value}" ;;
   esac
-  printf '%s\n' "${path_value}" | grep -Eq '^/[A-Za-z0-9._/-]+"$(normalize_arch)"
+  printf '%s\n' "${path_value}" | grep -Eq '^/[A-Za-z0-9._/-]+$' \
+    || fail "install paths may only contain letters, numbers, '.', '_', '-', and '/': ${path_value}"
+done
+
+if [ -n "${ENABLE_SERVICE}" ] && [ "${SYSTEMD_DIR}" != "/etc/systemd/system" ]; then
+  fail "--enable-service requires --systemd-dir /etc/systemd/system"
+fi
+
+ARCH="$(normalize_arch)"
 case "${ARCH}" in
   x86_64) EXPECTED_TARGET="x86_64-unknown-linux-gnu" ;;
   aarch64) EXPECTED_TARGET="aarch64-unknown-linux-gnu" ;;
@@ -243,7 +251,10 @@ if [ -z "${VERSION}" ]; then
 fi
 
 [ -n "${VERSION}" ] || fail "failed to resolve release version"
-printf '%s\n' "${VERSION}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?"$(artifact_name "${VERSION}" "${ARCH}")"
+printf '%s\n' "${VERSION}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' \
+  || fail "invalid release version: ${VERSION}"
+
+PACKAGE_NAME="$(artifact_name "${VERSION}" "${ARCH}")"
 PACKAGE_BASENAME="${PACKAGE_NAME%.tar.gz}"
 CHECKSUM_NAME="$(checksum_name "${VERSION}" "${ARCH}")"
 TMP_DIR="$(mktemp -d)"
