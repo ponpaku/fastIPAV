@@ -401,7 +401,7 @@ fn rx_video_branch(
     };
     format!(
         concat!(
-            "udpsrc address=\"0.0.0.0\" port={port} auto-multicast=true multicast-group={group}{iface}{buffer_size} caps={caps} ",
+            "udpsrc address={group} port={port} auto-multicast=true{iface}{buffer_size} caps={caps} ",
             "! queue max-size-buffers=8 leaky=downstream ",
             "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
             "! rtph264depay ",
@@ -451,7 +451,7 @@ fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
     );
     format!(
         concat!(
-            "udpsrc address=\"0.0.0.0\" port={port} auto-multicast=true multicast-group={group}{iface}{buffer_size} caps={caps} ",
+            "udpsrc address={group} port={port} auto-multicast=true{iface}{buffer_size} caps={caps} ",
             "! queue max-size-buffers=8 leaky=downstream ",
             "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
             "! rtpL16depay ",
