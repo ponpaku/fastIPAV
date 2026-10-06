@@ -215,9 +215,9 @@ curl -fsS http://127.0.0.1:8082/stats
 bash scripts/smoke-test.sh
 ```
 
-このテストは MJPEG 入力相当の経路を生成し、TX の H.264 encode 後と RX の H.264 decode 後の双方で実際に video buffer が通過したことを確認する。単に pipeline が `Playing` になっただけでは成功扱いしない。
+このテストは MJPEG 入力相当の映像と synthetic audio を生成し、TX の H.264 encode / RTP-L16 packetize 後と RX の H.264 decode / L16 depay 後の双方で実際に media buffer が通過したことを確認する。単に pipeline が `Playing` になっただけでは成功扱いしない。
 
-`/healthz` の `ok=true` も、video pipeline の開始だけではなく最初の video buffer を確認した後に返る。映像が流れていない場合は `state=waiting_for_video` のままになる。
+`/healthz` は media がreadyになるまで HTTP 503 を返し、ready後はHTTP 200と `ok=true` を返す。audio無効時はvideo、audio有効時はvideo/audio双方の実buffer到達がready条件になる。mediaが一定時間停止した場合はpipelineを再起動する。
 
 設定ファイルは起動時に検証される。multicast address、RTP port / payload type、映像サイズ・fps、HTTP bind、audio parameter などが不正な場合は pipeline 構築前にエラーで終了する。
 
@@ -244,12 +244,13 @@ source "$HOME/.cargo/env"
 ./scripts/package-release.sh --version v0.1.0
 ```
 
-Raspberry Pi 向け `aarch64` release:
+Raspberry Pi 向け `aarch64` release は、GStreamerなどのnative libraryへリンクするため、単純なRust target追加だけではクロスビルドしない。aarch64 Linuxホスト上で実行するか、GitHub ActionsのRelease workflowを使う。
+
+aarch64 Linuxホスト上:
 
 ```bash
 source "$HOME/.cargo/env"
-rustup target add aarch64-unknown-linux-gnu
-./scripts/package-release.sh --version v0.1.0 --target aarch64-unknown-linux-gnu
+./scripts/package-release.sh --version v0.1.0
 ```
 
 生成物:
@@ -279,8 +280,10 @@ cargo build
 ## 既知の制約
 
 - `capture-to-display` は現状、設定値ベースの初期推定を返す
+- RXではmedia bufferのPTS差から観測上のA/V offsetを更新するが、video/audioは独立RTPストリームで、RTCP/rtpbinによるsender-clock同期はまだ実装していない。長時間・高精度のA/V同期が必要な用途では追加実装が必要
 - 実機の遅延検証と UVC 入力確認は別途必要
 - Raspberry Pi / Linux PC 向けの hardware codec 最適化は今後の調整余地がある
+- systemdのRXをLinux desktopで使う場合、display sessionの環境や権限は環境依存。KMS/DRMを使うRaspberry Piとは条件が異なる
 
 
 ## CI
@@ -290,7 +293,7 @@ Pull Request と `main` への push では、GitHub Actions で以下を実行�
 - shell script の構文検証
 - workspace 全体の `cargo check`
 - unit test
-- GStreamer を使った tx/rx loopback smoke test
+- GStreamer を使った tx/rx loopback smoke test（映像・音声の実buffer通過を確認）
 
 ## License
 
