@@ -646,13 +646,16 @@ fn render_linux_sink(
 }
 
 fn preferred_linux_sink() -> LinuxSink {
-    if has_element("sdlvideosink") {
-        return LinuxSink::Sdl;
-    }
-    if has_element("waylandsink") && env::var_os("WAYLAND_DISPLAY").is_some() {
+    let has_wayland = env::var_os("WAYLAND_DISPLAY").is_some();
+    let has_x11 = env::var_os("DISPLAY").is_some();
+
+    if has_wayland && has_element("waylandsink") {
         return LinuxSink::Wayland;
     }
-    if has_element("ximagesink") && env::var_os("DISPLAY").is_some() {
+    if (has_wayland || has_x11) && has_element("sdlvideosink") {
+        return LinuxSink::Sdl;
+    }
+    if has_x11 && has_element("ximagesink") {
         return LinuxSink::XImage;
     }
     // Do not silently fall back to fakesink here. A receiver that cannot
