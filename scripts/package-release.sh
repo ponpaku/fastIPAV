@@ -66,8 +66,13 @@ WORKSPACE_VERSION="$(grep -m1 '^version = "' Cargo.toml | cut -d'"' -f2)"
 [ "${VERSION#v}" = "${WORKSPACE_VERSION}" ] \
   || fail "release tag ${VERSION} does not match workspace version ${WORKSPACE_VERSION}"
 
+HOST_TARGET="$(rustc -vV | sed -n 's/^host: //p')"
 if [ -z "${TARGET}" ]; then
-  TARGET="$(rustc -vV | sed -n 's/^host: //p')"
+  TARGET="${HOST_TARGET}"
+fi
+
+if [ "${TARGET}" != "${HOST_TARGET}" ]; then
+  fail "cross-compiling release packages is not supported by this script; run it on a native ${TARGET} host or use the GitHub Release workflow"
 fi
 
 case "${TARGET}" in
