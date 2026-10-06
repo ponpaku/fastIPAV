@@ -327,9 +327,24 @@ fn tx_audio_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
     let interface_fragment = interface_name
         .map(|name| format!(" multicast-iface={}", quoted(name)))
         .unwrap_or_default();
+    let source = if config.audio.source_element.trim().is_empty() {
+        format!(
+            "alsasrc name=audio_src device={} buffer-time={} latency-time={} provide-clock=false use-driver-timestamps={}",
+            quoted(&config.audio.device),
+            config.audio.buffer_time_us,
+            config.audio.latency_time_us,
+            if config.audio.use_driver_timestamps {
+                "true"
+            } else {
+                "false"
+            }
+        )
+    } else {
+        config.audio.source_element.clone()
+    };
     format!(
         concat!(
-            "alsasrc name=audio_src device={device} buffer-time={buffer_time_us} latency-time={latency_time_us} provide-clock=false use-driver-timestamps={use_driver_timestamps} ",
+            "{source} ",
             "! queue leaky=downstream max-size-buffers=8 max-size-bytes=0 max-size-time=0 ",
             "! audioconvert ",
             "! audioresample ",
@@ -338,14 +353,7 @@ fn tx_audio_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
             "! rtpL16pay pt={payload_type} mtu={mtu} ",
             "! udpsink host={group} port={port} auto-multicast=true ttl-mc={ttl} sync=false async=false{iface}"
         ),
-        device = quoted(&config.audio.device),
-        buffer_time_us = config.audio.buffer_time_us,
-        latency_time_us = config.audio.latency_time_us,
-        use_driver_timestamps = if config.audio.use_driver_timestamps {
-            "true"
-        } else {
-            "false"
-        },
+        source = source,
         sample_rate = config.audio.sample_rate,
         channels = config.audio.channels,
         payload_type = config.network.audio_payload_type,
@@ -419,6 +427,17 @@ fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
     } else {
         String::new()
     };
+    let sink = if config.audio.sink_element.trim().is_empty() {
+        format!(
+            "alsasink device={} sync={} async=false provide-clock=false buffer-time={} latency-time={}",
+            quoted(&config.audio.device),
+            if config.audio.sync { "true" } else { "false" },
+            config.audio.buffer_time_us,
+            config.audio.latency_time_us,
+        )
+    } else {
+        config.audio.sink_element.clone()
+    };
     let caps = format!(
         "application/x-rtp,media=audio,encoding-name=L16,payload={},clock-rate={},channels={}",
         config.network.audio_payload_type,
@@ -436,7 +455,7 @@ fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
             "! audio/x-raw,format=S16LE,layout=interleaved,rate={sample_rate},channels={channels} ",
             "! identity name=audio_monitor silent=true ",
             "! queue leaky=downstream max-size-buffers=8 max-size-bytes=0 max-size-time=0 ",
-            "! alsasink device={device} sync={sync} async=false provide-clock=false buffer-time={buffer_time_us} latency-time={latency_time_us}"
+            "! {sink}"
         ),
         port = config.network.audio_port,
         group = quoted(&config.network.multicast_group),
@@ -446,10 +465,7 @@ fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
         latency_ms = config.audio.jitter_latency_ms,
         sample_rate = config.audio.sample_rate,
         channels = config.audio.channels,
-        device = quoted(&config.audio.device),
-        sync = if config.audio.sync { "true" } else { "false" },
-        buffer_time_us = config.audio.buffer_time_us,
-        latency_time_us = config.audio.latency_time_us,
+        sink = sink,
     )
 }
 
