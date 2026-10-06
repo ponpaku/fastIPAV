@@ -214,6 +214,7 @@ need_cmd curl
 need_cmd tar
 need_cmd install
 need_cmd awk
+need_cmd sed
 need_cmd sha256sum
 
 ARCH="$(normalize_arch)"
@@ -279,8 +280,15 @@ fi
 
 log "installing systemd unit files to ${SYSTEMD_DIR}"
 as_root install -d "${SYSTEMD_DIR}"
-as_root install -m 0644 "${PACKAGE_DIR}/systemd/avoverip-tx.service" "${SYSTEMD_DIR}/avoverip-tx.service"
-as_root install -m 0644 "${PACKAGE_DIR}/systemd/avoverip-rx.service" "${SYSTEMD_DIR}/avoverip-rx.service"
+for role in tx rx; do
+  unit_source="${PACKAGE_DIR}/systemd/avoverip-${role}.service"
+  unit_rendered="${TMP_DIR}/avoverip-${role}.service"
+  sed \
+    -e "s#/usr/local/bin/#${PREFIX}/bin/#g" \
+    -e "s#/etc/avoverip/#${CONFIG_DIR}/#g" \
+    "${unit_source}" > "${unit_rendered}"
+  as_root install -m 0644 "${unit_rendered}" "${SYSTEMD_DIR}/avoverip-${role}.service"
+done
 as_root systemctl daemon-reload || true
 
 if [ -n "${ENABLE_SERVICE}" ]; then
