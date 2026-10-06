@@ -28,8 +28,8 @@ Options:
   -h, --help                Show this help
 
 Examples:
-  ./scripts/install.sh --install-deps
-  ./scripts/install.sh --version v0.1.0 --enable-service rx
+  bash scripts/install.sh --install-deps
+  bash scripts/install.sh --version v0.1.0 --enable-service rx
 EOF
 }
 
