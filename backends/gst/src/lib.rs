@@ -371,8 +371,10 @@ fn select_h264_encoder(config: &TxConfig) -> (String, &'static str) {
     let requested = config.video.encoder_element.trim();
 
     if requested.is_empty() || requested == "auto" {
-        if matches!(config.platform.profile.resolve(), PlatformProfile::RaspberryPi)
-            && !is_raspberry_pi_5_family()
+        if matches!(
+            config.platform.profile.resolve(),
+            PlatformProfile::RaspberryPi
+        ) && !is_raspberry_pi_5_family()
             && has_element("v4l2h264enc")
         {
             let bitrate_bps = (config.video.bitrate_kbps as u64) * 1_000;
