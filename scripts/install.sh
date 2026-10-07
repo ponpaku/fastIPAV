@@ -7,6 +7,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_SLUG="ponpaku/fastIPAV"
 VERSION=""
 INSTALL_DEPS=false
+USE_LOCAL_DIST=false
 ENABLE_SERVICE=""
 PREFIX="/usr/local"
 CONFIG_DIR="/etc/avoverip"
@@ -20,6 +21,7 @@ Usage: scripts/install.sh [options]
 Options:
   --version <tag>           Install a specific release tag such as v0.1.0
   --install-deps            Install runtime dependencies with apt-get
+  --local-dist              Use matching package/checksum from ./dist instead of GitHub
   --enable-service <role>   Enable and start systemd service for tx, rx, or both
   --repo <owner/name>       Override GitHub repository slug
   --prefix <path>           Installation prefix for binaries and shared assets
@@ -233,6 +235,10 @@ while [ "$#" -gt 0 ]; do
       INSTALL_DEPS=true
       shift
       ;;
+    --local-dist)
+      USE_LOCAL_DIST=true
+      shift
+      ;;
     --enable-service)
       [ "$#" -ge 2 ] || fail "--enable-service requires a value"
       ENABLE_SERVICE="$2"
@@ -329,10 +335,11 @@ LOCAL_CHECKSUM="${REPO_ROOT}/dist/${CHECKSUM_NAME}"
 PACKAGE_PATH="${TMP_DIR}/${PACKAGE_NAME}"
 CHECKSUM_PATH="${TMP_DIR}/${CHECKSUM_NAME}"
 
-if [ -f "${LOCAL_PACKAGE}" ]; then
+if [ "${USE_LOCAL_DIST}" = true ]; then
+  [ -f "${LOCAL_PACKAGE}" ] || fail "local package is missing: ${LOCAL_PACKAGE}"
   [ -f "${LOCAL_CHECKSUM}" ] ||
     fail "local checksum is missing: ${LOCAL_CHECKSUM}"
-  log "using local package ${LOCAL_PACKAGE}"
+  log "using explicitly requested local package ${LOCAL_PACKAGE}"
   cp "${LOCAL_PACKAGE}" "${PACKAGE_PATH}"
   cp "${LOCAL_CHECKSUM}" "${CHECKSUM_PATH}"
 else
