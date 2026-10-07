@@ -149,8 +149,10 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         };
         state.set_interface(interface_name.clone()).await;
 
-        let mut pipeline =
-            match GstServicePipeline::for_tx(&cycle_config, interface_name.as_deref()) {
+        let mut pipeline = match GstServicePipeline::for_tx(
+            &cycle_config,
+            interface_name.as_deref(),
+        ) {
             Ok(pipeline) => pipeline,
             Err(err) => {
                 let reason = format!("failed to construct tx pipeline: {err:#}");
@@ -189,7 +191,9 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                 if auto_encoder && uses_v4l2_encoder {
                     force_software_encoder = true;
                     state
-                        .add_note("automatic V4L2 H.264 encoder failed to start; falling back to x264")
+                        .add_note(
+                            "automatic V4L2 H.264 encoder failed to start; falling back to x264",
+                        )
                         .await;
                 }
                 let _ = pipeline.stop();
