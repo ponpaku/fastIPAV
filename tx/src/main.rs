@@ -199,7 +199,10 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             Ok(events) => events,
             Err(err) => {
                 let reason = format!("failed to start tx pipeline: {err:#}");
-                if auto_encoder && uses_v4l2_encoder {
+                if auto_encoder
+                    && uses_v4l2_encoder
+                    && reason.to_ascii_lowercase().contains("v4l2h264enc")
+                {
                     force_software_encoder = true;
                     state
                         .add_note(
@@ -538,8 +541,7 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         if auto_encoder
             && uses_v4l2_encoder
             && ((!video_ready
-                && (restart_reason_lower.contains("encoder produced no h264")
-                    || restart_reason_lower.contains("error")))
+                && restart_reason_lower.contains("encoder produced no h264"))
                 || restart_reason_lower.contains("v4l2h264enc"))
         {
             force_software_encoder = true;
