@@ -159,33 +159,25 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             Ok(pipeline) => pipeline,
             Err(err) => {
                 let reason = format!("failed to construct tx pipeline: {err:#}");
-                if auto_encoder
-                    && !force_software_encoder
-                    && reason.to_ascii_lowercase().contains("v4l2h264enc")
-                {
+                if auto_encoder && !force_software_encoder {
                     force_software_encoder = true;
+                    state.bump_pipeline_restarts().await;
                     state
-                        .add_note(
-                            "automatic v4l2h264enc pipeline failed to construct; retrying with x264",
-                        )
+                        .mark_failed(format!(
+                            "tx auto codec pipeline failed; retrying once with x264: {reason}"
+                        ))
                         .await;
+                    warn!(
+                        "tx automatic codec pipeline failed; retrying with x264: {}",
+                        reason
+                    );
+                    continue;
                 }
-                state.bump_pipeline_restarts().await;
+
                 state
-                    .mark_failed(format!("tx startup retry: {reason}"))
+                    .mark_failed(format!("tx pipeline construction failed: {reason}"))
                     .await;
-                warn!(
-                    "tx startup retry scheduled in {} ms: {}",
-                    config.recovery.restart_backoff_ms, reason
-                );
-                tokio::select! {
-                    _ = &mut shutdown => {
-                        state.mark_stopping("tx shutting down").await;
-                        return Ok(());
-                    }
-                    _ = tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)) => {}
-                }
-                continue;
+                return Err(anyhow!(reason));
             }
         };
         let uses_v4l2_encoder = pipeline.descriptions().video.contains("v4l2h264enc");
@@ -202,10 +194,7 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             Ok(events) => events,
             Err(err) => {
                 let reason = format!("failed to start tx pipeline: {err:#}");
-                if auto_encoder
-                    && uses_v4l2_encoder
-                    && reason.to_ascii_lowercase().contains("v4l2h264enc")
-                {
+                if auto_encoder && uses_v4l2_encoder {
                     force_software_encoder = true;
                     state
                         .add_note(
