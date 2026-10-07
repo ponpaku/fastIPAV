@@ -229,6 +229,7 @@ bash scripts/smoke-test.sh
 - `estimated_audio_offset_ms`
 - `pipeline_restarts`
 - `audio_underruns`
+- `qos_events`
 - `dropped_frames`
 - `dropped_audio_chunks`
 
