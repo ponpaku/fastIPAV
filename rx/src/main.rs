@@ -140,7 +140,9 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                 let reason = format!("failed to resolve multicast interface: {err:#}");
                 state.set_interface(None).await;
                 state.bump_pipeline_restarts().await;
-                state.mark_failed(format!("rx startup retry: {reason}")).await;
+                state
+                    .mark_failed(format!("rx startup retry: {reason}"))
+                    .await;
                 warn!(
                     "rx startup retry scheduled in {} ms: {}",
                     config.recovery.restart_backoff_ms, reason
@@ -162,7 +164,9 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
             Err(err) => {
                 let reason = format!("failed to construct rx pipeline: {err:#}");
                 state.bump_pipeline_restarts().await;
-                state.mark_failed(format!("rx startup retry: {reason}")).await;
+                state
+                    .mark_failed(format!("rx startup retry: {reason}"))
+                    .await;
                 warn!(
                     "rx startup retry scheduled in {} ms: {}",
                     config.recovery.restart_backoff_ms, reason
@@ -196,7 +200,9 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                 let reason = format!("failed to start rx pipeline: {err:#}");
                 let _ = pipeline.stop();
                 state.bump_pipeline_restarts().await;
-                state.mark_failed(format!("rx startup retry: {reason}")).await;
+                state
+                    .mark_failed(format!("rx startup retry: {reason}"))
+                    .await;
                 warn!(
                     "rx startup retry scheduled in {} ms: {}",
                     config.recovery.restart_backoff_ms, reason
