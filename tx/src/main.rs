@@ -281,305 +281,304 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
 
         let restart_reason = loop {
             tokio::select! {
-                _ = &mut shutdown => {
-                    info!("shutdown requested");
-                    state.mark_stopping("tx shutting down").await;
-                    if let Err(err) = pipeline.stop() {
-                        error!("failed to stop tx pipeline cleanly: {:?}", err);
-                    }
-                    return Ok(());
-                }
-                _ = watchdog.tick() => {
-                    match resolve_interface_name_for_rtp(
-            config.network.interface_override(),
-            config.network.rtp_mtu,
-        ) {
-                        Ok(current) if current != interface_name => {
-                            break format!(
-                                "multicast interface changed from {:?} to {:?}",
-                                interface_name, current
-                            );
+                    _ = &mut shutdown => {
+                        info!("shutdown requested");
+                        state.mark_stopping("tx shutting down").await;
+                        if let Err(err) = pipeline.stop() {
+                            error!("failed to stop tx pipeline cleanly: {:?}", err);
                         }
-                        Err(err) => {
-                            break format!("multicast interface unavailable: {}", err);
-                        }
-                        _ => {}
+                        return Ok(());
                     }
+                    _ = watchdog.tick() => {
+                        match resolve_interface_name_for_rtp(
+                config.network.interface_override(),
+                config.network.rtp_mtu,
+            ) {
+                            Ok(current) if current != interface_name => {
+                                break format!(
+                                    "multicast interface changed from {:?} to {:?}",
+                                    interface_name, current
+                                );
+                            }
+                            Err(err) => {
+                                break format!("multicast interface unavailable: {}", err);
+                            }
+                            _ => {}
+                        }
 
-                    if !video_ready {
-                        if let Some(first_seen) = first_video_ingress {
-                            if first_seen.elapsed() > media_timeout {
-                                if last_video_ingress.elapsed() <= media_timeout {
+                        if !video_ready {
+                            if let Some(first_seen) = first_video_ingress {
+                                if first_seen.elapsed() > media_timeout {
+                                    if last_video_ingress.elapsed() <= media_timeout {
+                                        break format!(
+                                            "video source is flowing but encoder produced no H264 within {} ms",
+                                            config.recovery.media_timeout_ms
+                                        );
+                                    }
                                     break format!(
-                                        "video source is flowing but encoder produced no H264 within {} ms",
+                                        "video source stopped before encoder produced H264 for {} ms",
                                         config.recovery.media_timeout_ms
                                     );
                                 }
+                            } else if started.elapsed() > media_timeout {
                                 break format!(
-                                    "video source stopped before encoder produced H264 for {} ms",
+                                    "no video source buffers received within {} ms",
                                     config.recovery.media_timeout_ms
                                 );
                             }
-                        } else if started.elapsed() > media_timeout {
+                        }
+                        if video_ready
+                            && !video_egress_ready
+                            && first_video_encoded
+                                .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
+                        {
                             break format!(
-                                "no video source buffers received within {} ms",
+                                "encoded video is flowing but RTP packetizer produced no packets within {} ms",
                                 config.recovery.media_timeout_ms
                             );
                         }
-                    }
-                    if video_ready
-                        && !video_egress_ready
-                        && first_video_encoded
-                            .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
-                    {
-                        break format!(
-                            "encoded video is flowing but RTP packetizer produced no packets within {} ms",
-                            config.recovery.media_timeout_ms
-                        );
-                    }
-                    if config.audio.enabled && !audio_ready {
-                        if let Some(first_seen) = first_audio_ingress {
-                            if first_seen.elapsed() > media_timeout {
-                                if last_audio_ingress.elapsed() <= media_timeout {
+                        if config.audio.enabled && !audio_ready {
+                            if let Some(first_seen) = first_audio_ingress {
+                                if first_seen.elapsed() > media_timeout {
+                                    if last_audio_ingress.elapsed() <= media_timeout {
+                                        break format!(
+                                            "audio source is flowing but processing produced no RTP-ready audio within {} ms",
+                                            config.recovery.media_timeout_ms
+                                        );
+                                    }
                                     break format!(
-                                        "audio source is flowing but processing produced no RTP-ready audio within {} ms",
+                                        "audio source stopped before processing produced output for {} ms",
                                         config.recovery.media_timeout_ms
                                     );
                                 }
+                            } else if started.elapsed() > media_timeout {
                                 break format!(
-                                    "audio source stopped before processing produced output for {} ms",
+                                    "no audio source buffers received within {} ms",
                                     config.recovery.media_timeout_ms
                                 );
                             }
-                        } else if started.elapsed() > media_timeout {
+                        }
+                        if config.audio.enabled
+                            && audio_ready
+                            && !audio_egress_ready
+                            && first_audio_processed
+                                .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
+                        {
                             break format!(
-                                "no audio source buffers received within {} ms",
+                                "processed audio is flowing but RTP packetizer produced no packets within {} ms",
+                                config.recovery.media_timeout_ms
+                            );
+                        }
+                        if video_ready && last_video_buffer.elapsed() > media_timeout {
+                            if last_video_ingress.elapsed() <= media_timeout {
+                                break format!(
+                                    "video source is flowing but encoder stalled for more than {} ms",
+                                    config.recovery.media_timeout_ms
+                                );
+                            }
+                            break format!(
+                                "video source/encoder stream stalled for more than {} ms",
+                                config.recovery.media_timeout_ms
+                            );
+                        }
+                        if video_egress_ready && last_video_egress.elapsed() > media_timeout {
+                            break format!(
+                                "video RTP egress stalled for more than {} ms",
+                                config.recovery.media_timeout_ms
+                            );
+                        }
+                        if config.audio.enabled && audio_ready && last_audio_buffer.elapsed() > media_timeout {
+                            if last_audio_ingress.elapsed() <= media_timeout {
+                                break format!(
+                                    "audio source is flowing but processing stalled for more than {} ms",
+                                    config.recovery.media_timeout_ms
+                                );
+                            }
+                            break format!(
+                                "audio source/processing stream stalled for more than {} ms",
+                                config.recovery.media_timeout_ms
+                            );
+                        }
+                        if config.audio.enabled
+                            && audio_egress_ready
+                            && last_audio_egress.elapsed() > media_timeout
+                        {
+                            break format!(
+                                "audio RTP egress stalled for more than {} ms",
                                 config.recovery.media_timeout_ms
                             );
                         }
                     }
-                    if config.audio.enabled
-                        && audio_ready
-                        && !audio_egress_ready
-                        && first_audio_processed
-                            .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
-                    {
-                        break format!(
-                            "processed audio is flowing but RTP packetizer produced no packets within {} ms",
-                            config.recovery.media_timeout_ms
-                        );
-                    }
-                    if video_ready && last_video_buffer.elapsed() > media_timeout {
-                        if last_video_ingress.elapsed() <= media_timeout {
-                            break format!(
-                                "video source is flowing but encoder stalled for more than {} ms",
-                                config.recovery.media_timeout_ms
-                            );
+                    changed = events.qos.changed() => {
+                        if changed.is_err() {
+                            break "QoS heartbeat channel closed".to_string();
                         }
-                        break format!(
-                            "video source/encoder stream stalled for more than {} ms",
-                            config.recovery.media_timeout_ms
-                        );
-                    }
-                    if video_egress_ready && last_video_egress.elapsed() > media_timeout {
-                        break format!(
-                            "video RTP egress stalled for more than {} ms",
-                            config.recovery.media_timeout_ms
-                        );
-                    }
-                    if config.audio.enabled && audio_ready && last_audio_buffer.elapsed() > media_timeout {
-                        if last_audio_ingress.elapsed() <= media_timeout {
-                            break format!(
-                                "audio source is flowing but processing stalled for more than {} ms",
-                                config.recovery.media_timeout_ms
-                            );
+                        let current = *events.qos.borrow_and_update();
+                        if current > qos_total {
+                            state.add_qos_events(current - qos_total).await;
+                            qos_total = current;
                         }
-                        break format!(
-                            "audio source/processing stream stalled for more than {} ms",
-                            config.recovery.media_timeout_ms
-                        );
                     }
-                    if config.audio.enabled
-                        && audio_egress_ready
-                        && last_audio_egress.elapsed() > media_timeout
-                    {
-                        break format!(
-                            "audio RTP egress stalled for more than {} ms",
-                            config.recovery.media_timeout_ms
-                        );
-                    }
-                }
-                changed = events.qos.changed() => {
-                    if changed.is_err() {
-                        break "QoS heartbeat channel closed".to_string();
-                    }
-                    let current = *events.qos.borrow_and_update();
-                    if current > qos_total {
-                        state.add_qos_events(current - qos_total).await;
-                        qos_total = current;
-                    }
-                }
-                changed = events.terminal.changed() => {
-                    if changed.is_err() {
-                        break "pipeline terminal event channel closed".to_string();
-                    }
-                    let event = events.terminal.borrow_and_update().clone();
-                    let Some(event) = event else {
-                        continue;
-                    };
-                    let _ = handle_tx_event(&state, &event).await;
-                    break event.message();
-                }
-                event = events.bus.recv() => {
-                    let Some(event) = event else {
-                        break "pipeline bus event channel closed".to_string();
-                    };
-                    if handle_tx_event(&state, &event).await {
+                    changed = events.terminal.changed() => {
+                        if changed.is_err() {
+                            break "pipeline terminal event channel closed".to_string();
+                        }
+                        let event = events.terminal.borrow_and_update().clone();
+                        let Some(event) = event else {
+                            continue;
+                        };
+                        let _ = handle_tx_event(&state, &event).await;
                         break event.message();
                     }
-                }
-                changed = events.video_ingress.changed() => {
-                    if changed.is_err() {
-                        break "video ingress heartbeat channel closed".to_string();
-                    }
-                    let heartbeat = *events.video_ingress.borrow_and_update();
-                    if let Some(observed_at) = heartbeat.observed_at {
-                        last_video_ingress = observed_at;
-                    }
-                    if heartbeat.total > video_ingress_total {
-                        if first_video_ingress.is_none() {
-                            first_video_ingress = heartbeat.observed_at;
+                    event = events.bus.recv() => {
+                        let Some(event) = event else {
+                            break "pipeline bus event channel closed".to_string();
+                        };
+                        if handle_tx_event(&state, &event).await {
+                            break event.message();
                         }
-                        video_ingress_total = heartbeat.total;
                     }
-                }
-                changed = events.audio_ingress.changed() => {
-                    if changed.is_err() {
-                        break "audio ingress heartbeat channel closed".to_string();
-                    }
-                    let heartbeat = *events.audio_ingress.borrow_and_update();
-                    if let Some(observed_at) = heartbeat.observed_at {
-                        last_audio_ingress = observed_at;
-                    }
-                    if heartbeat.total > audio_ingress_total {
-                        if first_audio_ingress.is_none() {
-                            first_audio_ingress = heartbeat.observed_at;
+                    changed = events.video_ingress.changed() => {
+                        if changed.is_err() {
+                            break "video ingress heartbeat channel closed".to_string();
                         }
-                        audio_ingress_total = heartbeat.total;
+                        let heartbeat = *events.video_ingress.borrow_and_update();
+                        if let Some(observed_at) = heartbeat.observed_at {
+                            last_video_ingress = observed_at;
+                        }
+                        if heartbeat.total > video_ingress_total {
+                            if first_video_ingress.is_none() {
+                                first_video_ingress = heartbeat.observed_at;
+                            }
+                            video_ingress_total = heartbeat.total;
+                        }
+                    }
+                    changed = events.audio_ingress.changed() => {
+                        if changed.is_err() {
+                            break "audio ingress heartbeat channel closed".to_string();
+                        }
+                        let heartbeat = *events.audio_ingress.borrow_and_update();
+                        if let Some(observed_at) = heartbeat.observed_at {
+                            last_audio_ingress = observed_at;
+                        }
+                        if heartbeat.total > audio_ingress_total {
+                            if first_audio_ingress.is_none() {
+                                first_audio_ingress = heartbeat.observed_at;
+                            }
+                            audio_ingress_total = heartbeat.total;
+                        }
+                    }
+                    changed = events.video.changed() => {
+                        if changed.is_err() {
+                            break "video heartbeat channel closed".to_string();
+                        }
+                        let heartbeat = *events.video.borrow_and_update();
+                        if let Some(observed_at) = heartbeat.observed_at {
+                            last_video_buffer = observed_at;
+                        }
+                        if heartbeat.total > video_total {
+                            state.add_frames_total(heartbeat.total - video_total).await;
+                            video_total = heartbeat.total;
+                        }
+                        if !video_ready && heartbeat.total > 0 {
+                            video_ready = true;
+                            first_video_encoded = heartbeat.observed_at;
+                            info!("tx received first encoded video buffer");
+                        }
+                        if !service_ready
+                            && video_ready
+                            && video_egress_ready
+                            && audio_ready
+                            && audio_egress_ready
+                        {
+                            service_ready = true;
+                            state.mark_ready("tx RTP media is flowing").await;
+                        }
+                    }
+                    changed = events.audio.changed() => {
+                        if changed.is_err() {
+                            break "audio heartbeat channel closed".to_string();
+                        }
+                        let heartbeat = *events.audio.borrow_and_update();
+                        if let Some(observed_at) = heartbeat.observed_at {
+                            last_audio_buffer = observed_at;
+                        }
+                        if heartbeat.total > audio_total {
+                            state.add_audio_chunks_total(heartbeat.total - audio_total).await;
+                            audio_total = heartbeat.total;
+                        }
+                        if !audio_ready && heartbeat.total > 0 {
+                            audio_ready = true;
+                            first_audio_processed = heartbeat.observed_at;
+                            info!("tx received first processed audio buffer");
+                        }
+                        if !service_ready
+                            && video_ready
+                            && video_egress_ready
+                            && audio_ready
+                            && audio_egress_ready
+                        {
+                            service_ready = true;
+                            state.mark_ready("tx RTP media is flowing").await;
+                        }
+                    }
+                    changed = events.video_egress.changed() => {
+                        if changed.is_err() {
+                            break "video RTP egress heartbeat channel closed".to_string();
+                        }
+                        let heartbeat = *events.video_egress.borrow_and_update();
+                        if let Some(observed_at) = heartbeat.observed_at {
+                            last_video_egress = observed_at;
+                        }
+                        if heartbeat.total > video_egress_total {
+                            video_egress_total = heartbeat.total;
+                        }
+                        if !video_egress_ready && heartbeat.total > 0 {
+                            video_egress_ready = true;
+                            info!("tx emitted first video RTP packet");
+                        }
+                        if !service_ready
+                            && video_ready
+                            && video_egress_ready
+                            && audio_ready
+                            && audio_egress_ready
+                        {
+                            service_ready = true;
+                            state.mark_ready("tx RTP media is flowing").await;
+                        }
+                    }
+                    changed = events.audio_egress.changed() => {
+                        if changed.is_err() {
+                            break "audio RTP egress heartbeat channel closed".to_string();
+                        }
+                        let heartbeat = *events.audio_egress.borrow_and_update();
+                        if let Some(observed_at) = heartbeat.observed_at {
+                            last_audio_egress = observed_at;
+                        }
+                        if heartbeat.total > audio_egress_total {
+                            audio_egress_total = heartbeat.total;
+                        }
+                        if !audio_egress_ready && heartbeat.total > 0 {
+                            audio_egress_ready = true;
+                            info!("tx emitted first audio RTP packet");
+                        }
+                        if !service_ready
+                            && video_ready
+                            && video_egress_ready
+                            && audio_ready
+                            && audio_egress_ready
+                        {
+                            service_ready = true;
+                            state.mark_ready("tx RTP media is flowing").await;
+                        }
                     }
                 }
-                changed = events.video.changed() => {
-                    if changed.is_err() {
-                        break "video heartbeat channel closed".to_string();
-                    }
-                    let heartbeat = *events.video.borrow_and_update();
-                    if let Some(observed_at) = heartbeat.observed_at {
-                        last_video_buffer = observed_at;
-                    }
-                    if heartbeat.total > video_total {
-                        state.add_frames_total(heartbeat.total - video_total).await;
-                        video_total = heartbeat.total;
-                    }
-                    if !video_ready && heartbeat.total > 0 {
-                        video_ready = true;
-                        first_video_encoded = heartbeat.observed_at;
-                        info!("tx received first encoded video buffer");
-                    }
-                    if !service_ready
-                        && video_ready
-                        && video_egress_ready
-                        && audio_ready
-                        && audio_egress_ready
-                    {
-                        service_ready = true;
-                        state.mark_ready("tx RTP media is flowing").await;
-                    }
-                }
-                changed = events.audio.changed() => {
-                    if changed.is_err() {
-                        break "audio heartbeat channel closed".to_string();
-                    }
-                    let heartbeat = *events.audio.borrow_and_update();
-                    if let Some(observed_at) = heartbeat.observed_at {
-                        last_audio_buffer = observed_at;
-                    }
-                    if heartbeat.total > audio_total {
-                        state.add_audio_chunks_total(heartbeat.total - audio_total).await;
-                        audio_total = heartbeat.total;
-                    }
-                    if !audio_ready && heartbeat.total > 0 {
-                        audio_ready = true;
-                        first_audio_processed = heartbeat.observed_at;
-                        info!("tx received first processed audio buffer");
-                    }
-                    if !service_ready
-                        && video_ready
-                        && video_egress_ready
-                        && audio_ready
-                        && audio_egress_ready
-                    {
-                        service_ready = true;
-                        state.mark_ready("tx RTP media is flowing").await;
-                    }
-                }
-                changed = events.video_egress.changed() => {
-                    if changed.is_err() {
-                        break "video RTP egress heartbeat channel closed".to_string();
-                    }
-                    let heartbeat = *events.video_egress.borrow_and_update();
-                    if let Some(observed_at) = heartbeat.observed_at {
-                        last_video_egress = observed_at;
-                    }
-                    if heartbeat.total > video_egress_total {
-                        video_egress_total = heartbeat.total;
-                    }
-                    if !video_egress_ready && heartbeat.total > 0 {
-                        video_egress_ready = true;
-                        info!("tx emitted first video RTP packet");
-                    }
-                    if !service_ready
-                        && video_ready
-                        && video_egress_ready
-                        && audio_ready
-                        && audio_egress_ready
-                    {
-                        service_ready = true;
-                        state.mark_ready("tx RTP media is flowing").await;
-                    }
-                }
-                changed = events.audio_egress.changed() => {
-                    if changed.is_err() {
-                        break "audio RTP egress heartbeat channel closed".to_string();
-                    }
-                    let heartbeat = *events.audio_egress.borrow_and_update();
-                    if let Some(observed_at) = heartbeat.observed_at {
-                        last_audio_egress = observed_at;
-                    }
-                    if heartbeat.total > audio_egress_total {
-                        audio_egress_total = heartbeat.total;
-                    }
-                    if !audio_egress_ready && heartbeat.total > 0 {
-                        audio_egress_ready = true;
-                        info!("tx emitted first audio RTP packet");
-                    }
-                    if !service_ready
-                        && video_ready
-                        && video_egress_ready
-                        && audio_ready
-                        && audio_egress_ready
-                    {
-                        service_ready = true;
-                        state.mark_ready("tx RTP media is flowing").await;
-                    }
-                }
-            }
         };
 
         let restart_reason_lower = restart_reason.to_ascii_lowercase();
         if auto_encoder
             && uses_v4l2_encoder
-            && ((!video_ready
-                && restart_reason_lower.contains("encoder produced no h264"))
+            && ((!video_ready && restart_reason_lower.contains("encoder produced no h264"))
                 || restart_reason_lower.contains("encoder stalled")
                 || restart_reason_lower.contains("v4l2h264enc"))
         {
