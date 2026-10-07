@@ -598,8 +598,8 @@ fn rx_video_branch(
     let pipeline = format!(
         concat!(
             "udpsrc address={group} port={port} auto-multicast=true mtu={mtu}{iface}{buffer_size} caps={caps} ",
-            "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
             "! identity name=video_ingress_monitor silent=true ",
+            "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
             "! rtph264depay wait-for-keyframe=true ",
             "! video/x-h264,stream-format=byte-stream,alignment=au ",
             "! h264parse ",
@@ -655,8 +655,8 @@ fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
     format!(
         concat!(
             "udpsrc address={group} port={port} auto-multicast=true mtu={mtu}{iface}{buffer_size} caps={caps} ",
-            "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
             "! identity name=audio_ingress_monitor silent=true ",
+            "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
             "! rtpL16depay ",
             "! audioconvert ",
             "! audioresample ",
