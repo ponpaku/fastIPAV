@@ -320,8 +320,8 @@ fn build_tx_descriptions(config: &TxConfig, interface_name: Option<&str>) -> Pip
 }
 
 fn build_rx_descriptions(config: &RxConfig, interface_name: Option<&str>) -> PipelineDescriptions {
-    let renderer = config.video.renderer.resolve(&config.platform.profile);
-    let (video, renderer_name) = rx_video_branch(config, interface_name, &renderer);
+    let (video, renderer_name) =
+        rx_video_branch(config, interface_name, &config.video.renderer);
     let audio = config
         .audio
         .enabled
@@ -608,9 +608,20 @@ fn render_sink(
 ) -> String {
     let sync_value = if sync { "true" } else { "false" };
     let max_lateness_ns = (max_lateness_ms as u64) * 1_000_000;
-    match renderer.resolve(profile) {
+    match renderer {
+        RendererKind::Auto => match profile.resolve() {
+            PlatformProfile::RaspberryPi => format!(
+                "kmssink sync={} force-modesetting={} qos=true max-lateness={}",
+                sync_value,
+                if fullscreen { "true" } else { "false" },
+                max_lateness_ns
+            ),
+            PlatformProfile::LinuxPc | PlatformProfile::Auto => {
+                render_linux_sink(preferred_linux_sink(), fullscreen, sync, max_lateness_ms)
+            }
+        },
         RendererKind::Sdl => {
-            render_linux_sink(preferred_linux_sink(), fullscreen, sync, max_lateness_ms)
+            render_linux_sink(LinuxSink::Sdl, fullscreen, sync, max_lateness_ms)
         }
         RendererKind::KmsDrm => format!(
             "kmssink sync={} force-modesetting={} qos=true max-lateness={}",
@@ -618,7 +629,6 @@ fn render_sink(
             if fullscreen { "true" } else { "false" },
             max_lateness_ns
         ),
-        RendererKind::Auto => unreachable!("renderer auto is resolved before sink selection"),
     }
 }
 
