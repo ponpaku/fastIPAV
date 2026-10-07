@@ -202,6 +202,16 @@ enable_services() {
   esac
 }
 
+restart_active_services() {
+  local service
+  for service in avoverip-tx avoverip-rx; do
+    if systemctl is-active --quiet "${service}" 2>/dev/null; then
+      log "restarting active service ${service}"
+      as_root systemctl restart "${service}"
+    fi
+  done
+}
+
 manifest_value() {
   local package_dir="$1"
   local key="$2"
@@ -443,6 +453,9 @@ done
 
 if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ] && command -v systemctl >/dev/null 2>&1; then
   as_root systemctl daemon-reload || true
+  if [ -z "${ENABLE_SERVICE}" ]; then
+    restart_active_services
+  fi
 fi
 
 if [ -n "${ENABLE_SERVICE}" ]; then
