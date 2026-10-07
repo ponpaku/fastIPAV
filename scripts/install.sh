@@ -317,6 +317,10 @@ if [ "${PROFILE_SUFFIX}" = "default" ] &&
   log "warning: Linux desktop RX usually needs a graphical-session environment; the system service is primarily suitable for KMS/headless-style sinks"
 fi
 
+if [ "${USE_LOCAL_DIST}" = true ] && [ -z "${VERSION}" ]; then
+  fail "--local-dist requires --version"
+fi
+
 if [ -z "${VERSION}" ]; then
   VERSION="$(resolve_latest_version)"
 fi
