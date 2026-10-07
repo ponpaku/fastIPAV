@@ -86,11 +86,13 @@ bash scripts/install.sh --install-deps
 bash scripts/install.sh --enable-service both
 ```
 
-`rx` だけ有効化したい場合:
+Raspberry PiなどKMS/DRMで動かす `rx` だけをsystem serviceとして有効化したい場合:
 
 ```bash
 bash scripts/install.sh --enable-service rx
 ```
+
+Linux desktopでWayland/X11へ表示するRXは、system serviceではdisplay session環境が不足しやすい。通常はログイン中のgraphical sessionから `rx` を起動するか、環境に合わせたuser serviceを用意する。
 
 ### install 後の配置先
 
