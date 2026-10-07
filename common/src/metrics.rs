@@ -208,9 +208,12 @@ impl SharedServiceState {
         video_pipeline: impl Into<String>,
         audio_pipeline: Option<String>,
     ) {
+        let video_pipeline = video_pipeline.into();
         let mut stats = self.stats.write().await;
-        stats.video_pipeline = Some(video_pipeline.into());
-        stats.audio_pipeline = audio_pipeline;
+        stats.video_pipeline = Some(pipeline_shape(&video_pipeline));
+        stats.audio_pipeline = audio_pipeline
+            .as_deref()
+            .map(pipeline_shape);
     }
 
     pub async fn add_frames_total(&self, delta: u64) {
@@ -273,5 +276,76 @@ fn push_note(notes: &mut Vec<String>, note: String) {
     if notes.len() > 32 {
         let overflow = notes.len() - 32;
         notes.drain(0..overflow);
+    }
+}
+
+
+pub fn pipeline_shape(description: &str) -> String {
+    split_pipeline_segments(description)
+        .into_iter()
+        .filter_map(|segment| {
+            let segment = segment.trim();
+            if segment.is_empty() {
+                return None;
+            }
+            let head = segment.split_whitespace().next()?;
+            if head.contains('/') {
+                Some(head.split(',').next().unwrap_or(head).to_string())
+            } else {
+                Some(head.to_string())
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ! ")
+}
+
+fn split_pipeline_segments(description: &str) -> Vec<&str> {
+    let mut segments = Vec::new();
+    let mut start = 0;
+    let mut quote = None;
+    let mut escaped = false;
+
+    for (index, ch) in description.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        match quote {
+            Some(active) if ch == active => quote = None,
+            Some(_) => {}
+            None if ch == '"' || ch == '\'' => quote = Some(ch),
+            None if ch == '!' => {
+                segments.push(&description[start..index]);
+                start = index + ch.len_utf8();
+            }
+            None => {}
+        }
+    }
+    segments.push(&description[start..]);
+    segments
+}
+
+#[cfg(test)]
+mod pipeline_shape_tests {
+    use super::pipeline_shape;
+
+    #[test]
+    fn removes_element_properties_and_caps_fields() {
+        let description = r#"rtspsrc location="rtsp://user:secret@example.test/live" ! application/x-rtp,media=video,payload=96 ! rtph264depay ! fakesink sync=false"#;
+        assert_eq!(
+            pipeline_shape(description),
+            "rtspsrc ! application/x-rtp ! rtph264depay ! fakesink"
+        );
+        assert!(!pipeline_shape(description).contains("secret"));
+    }
+
+    #[test]
+    fn ignores_bang_inside_quoted_property_values() {
+        let description = r#"identity name=x dump=false data="secret!value" ! fakesink"#;
+        assert_eq!(pipeline_shape(description), "identity ! fakesink");
     }
 }
