@@ -63,12 +63,14 @@ pub struct PipelineEvents {
     pub terminal: watch::Receiver<Option<PipelineEvent>>,
     pub video: watch::Receiver<MediaHeartbeat>,
     pub audio: watch::Receiver<MediaHeartbeat>,
+    pub video_codec: watch::Receiver<MediaHeartbeat>,
     pub video_ingress: watch::Receiver<MediaHeartbeat>,
     pub audio_ingress: watch::Receiver<MediaHeartbeat>,
     pub video_egress: watch::Receiver<MediaHeartbeat>,
     pub audio_egress: watch::Receiver<MediaHeartbeat>,
     pub qos: watch::Receiver<u64>,
     _audio_guard: Option<watch::Sender<MediaHeartbeat>>,
+    _video_codec_guard: Option<watch::Sender<MediaHeartbeat>>,
     _video_ingress_guard: Option<watch::Sender<MediaHeartbeat>>,
     _audio_ingress_guard: Option<watch::Sender<MediaHeartbeat>>,
     _video_egress_guard: Option<watch::Sender<MediaHeartbeat>>,
@@ -114,6 +116,7 @@ impl GstServicePipeline {
         };
         let (video_tx, video_rx) = watch::channel(initial_heartbeat);
         let (audio_tx, audio_rx) = watch::channel(initial_heartbeat);
+        let (video_codec_tx, video_codec_rx) = watch::channel(initial_heartbeat);
         let (video_ingress_tx, video_ingress_rx) = watch::channel(initial_heartbeat);
         let (audio_ingress_tx, audio_ingress_rx) = watch::channel(initial_heartbeat);
         let (video_egress_tx, video_egress_rx) = watch::channel(initial_heartbeat);
@@ -125,6 +128,12 @@ impl GstServicePipeline {
             None
         } else {
             Some(audio_tx)
+        };
+        let video_codec_guard = if self.pipeline.by_name("video_codec_monitor").is_some() {
+            self.install_buffer_probe("video_codec_monitor", video_codec_tx)?;
+            None
+        } else {
+            Some(video_codec_tx)
         };
         let video_ingress_guard = if self.pipeline.by_name("video_ingress_monitor").is_some() {
             self.install_buffer_probe("video_ingress_monitor", video_ingress_tx)?;
@@ -247,12 +256,14 @@ impl GstServicePipeline {
             terminal: terminal_rx,
             video: video_rx,
             audio: audio_rx,
+            video_codec: video_codec_rx,
             video_ingress: video_ingress_rx,
             audio_ingress: audio_ingress_rx,
             video_egress: video_egress_rx,
             audio_egress: audio_egress_rx,
             qos: qos_rx,
             _audio_guard: audio_guard,
+            _video_codec_guard: video_codec_guard,
             _video_ingress_guard: video_ingress_guard,
             _audio_ingress_guard: audio_ingress_guard,
             _video_egress_guard: video_egress_guard,
@@ -599,6 +610,7 @@ fn rx_video_branch(
             "! {decoder} ",
             "! videoconvert ",
             "! video/x-raw,width={width},height={height},framerate={fps}/1 ",
+            "! identity name=video_codec_monitor silent=true ",
             "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ",
             "! identity name=video_monitor silent=true ",
             "! {sink}"
