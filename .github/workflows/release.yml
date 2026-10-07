@@ -166,7 +166,7 @@ jobs:
         run: |
           archive="$(find dist -maxdepth 1 -name '*.tar.gz' -print -quit)"
           test -n "${archive}"
-          package_name="$(tar -tzf "${archive}" | head -n1 | cut -d/ -f1)"
+          package_name="$(basename "${archive}" .tar.gz)"
           test -n "${package_name}"
           tar -xzf "${archive}" -C dist
           package_dir="dist/${package_name}"
