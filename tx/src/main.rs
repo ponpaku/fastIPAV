@@ -156,6 +156,12 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             Ok(pipeline) => pipeline,
             Err(err) => {
                 let reason = format!("failed to construct tx pipeline: {err:#}");
+                if auto_encoder && !force_software_encoder {
+                    force_software_encoder = true;
+                    state
+                        .add_note("automatic codec pipeline failed to construct; retrying with x264")
+                        .await;
+                }
                 state.bump_pipeline_restarts().await;
                 state
                     .mark_failed(format!("tx startup retry: {reason}"))
