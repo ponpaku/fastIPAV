@@ -69,7 +69,7 @@ sudo apt-get install -y \
 リポジトリを取得して install スクリプトを実行する。
 
 ```bash
-git clone git@github.com:ponpaku/fastIPAV.git
+git clone https://github.com/ponpaku/fastIPAV.git
 cd fastIPAV
 bash scripts/install.sh
 ```
