@@ -151,6 +151,12 @@ impl NetworkConfig {
         if self.receive_buffer_size > i32::MAX as u32 {
             bail!("network.receive_buffer_size must fit in a signed 32-bit GStreamer property");
         }
+        if self.receive_buffer_size != 0 && self.receive_buffer_size < self.rtp_mtu {
+            bail!(
+                "network.receive_buffer_size must be zero or at least network.rtp_mtu ({} bytes)",
+                self.rtp_mtu
+            );
+        }
         Ok(())
     }
 }
@@ -1038,6 +1044,14 @@ mod tests {
     fn rejects_rtp_mtu_above_ipv4_udp_limit() {
         let mut config = TxConfig::default();
         config.network.rtp_mtu = 65_508;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_receive_buffer_smaller_than_rtp_packet() {
+        let mut config = RxConfig::default();
+        config.network.rtp_mtu = 1200;
+        config.network.receive_buffer_size = 1199;
         assert!(config.validate().is_err());
     }
 
