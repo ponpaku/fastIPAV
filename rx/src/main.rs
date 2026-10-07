@@ -31,6 +31,8 @@ struct Cli {
     windowed: bool,
     #[arg(long)]
     verbose: bool,
+    #[arg(long)]
+    check_config: bool,
 }
 
 #[tokio::main]
@@ -63,6 +65,10 @@ async fn main() -> Result<()> {
         config.video.fullscreen = false;
     }
     config.validate()?;
+    if cli.check_config {
+        println!("rx config OK: {}", config_path);
+        return Ok(());
+    }
 
     let resolved_renderer = config
         .video
