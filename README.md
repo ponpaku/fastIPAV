@@ -188,6 +188,7 @@ sudo systemctl enable --now avoverip-rx
 
 主な既定値:
 
+- observability HTTPは認証を持たないため、既定の `127.0.0.1` bindを推奨する。非loopbackへbindする場合はfirewall/VPN等で到達範囲を制限する
 - multicast group: `239.255.10.10`
 - video port: `5004`
 - audio port: `5006`
