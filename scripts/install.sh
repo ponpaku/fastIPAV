@@ -206,6 +206,12 @@ ensure_service_user() {
     need_cmd groupadd
     log "creating system group avoverip"
     as_root groupadd --system avoverip
+  else
+    local existing_gid
+    existing_gid="$(getent group avoverip | awk -F: '{ print $3 }')"
+    if [ -z "${existing_gid}" ] || [ "${existing_gid}" -eq 0 ] || [ "${existing_gid}" -ge 1000 ]; then
+      fail "existing group avoverip (gid ${existing_gid:-unknown}) is not a dedicated system group"
+    fi
   fi
 
   if id -u avoverip >/dev/null 2>&1; then
@@ -549,6 +555,15 @@ if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
   # custom pipeline fragments or embedded URIs to every local user.
   as_root chown root:avoverip "${CONFIG_DIR}/tx.toml" "${CONFIG_DIR}/rx.toml"
   as_root chmod 0640 "${CONFIG_DIR}/tx.toml" "${CONFIG_DIR}/rx.toml"
+
+  need_cmd runuser
+  log "validating installed binaries and configs as service user avoverip"
+  as_root runuser -u avoverip -- "${PREFIX}/bin/tx" \
+    --config "${CONFIG_DIR}/tx.toml" --check-config >/dev/null ||
+    fail "installed tx binary/config is not usable by service user avoverip"
+  as_root runuser -u avoverip -- "${PREFIX}/bin/rx" \
+    --config "${CONFIG_DIR}/rx.toml" --check-config >/dev/null ||
+    fail "installed rx binary/config is not usable by service user avoverip"
 fi
 
 PREFIX_SED="$(escape_sed_replacement "${PREFIX}")"
