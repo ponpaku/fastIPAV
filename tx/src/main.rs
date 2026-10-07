@@ -247,6 +247,10 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         let mut last_audio_buffer = started;
         let mut video_total = 0_u64;
         let mut audio_total = 0_u64;
+        let mut video_ingress_total = 0_u64;
+        let mut audio_ingress_total = 0_u64;
+        let mut first_video_ingress: Option<Instant> = None;
+        let mut first_audio_ingress: Option<Instant> = None;
         let mut qos_total = 0_u64;
         let mut video_ready = false;
         let mut audio_ready = !config.audio.enabled;
@@ -280,17 +284,35 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                         _ => {}
                     }
 
-                    if !video_ready && started.elapsed() > media_timeout {
-                        break format!(
-                            "no video buffers received within {} ms",
-                            config.recovery.media_timeout_ms
-                        );
+                    if !video_ready {
+                        if let Some(first_seen) = first_video_ingress {
+                            if first_seen.elapsed() > media_timeout {
+                                break format!(
+                                    "video source is flowing but encoder produced no H264 within {} ms",
+                                    config.recovery.media_timeout_ms
+                                );
+                            }
+                        } else if started.elapsed() > media_timeout {
+                            break format!(
+                                "no video source buffers received within {} ms",
+                                config.recovery.media_timeout_ms
+                            );
+                        }
                     }
-                    if config.audio.enabled && !audio_ready && started.elapsed() > media_timeout {
-                        break format!(
-                            "no audio buffers received within {} ms",
-                            config.recovery.media_timeout_ms
-                        );
+                    if config.audio.enabled && !audio_ready {
+                        if let Some(first_seen) = first_audio_ingress {
+                            if first_seen.elapsed() > media_timeout {
+                                break format!(
+                                    "audio source is flowing but processing produced no RTP-ready audio within {} ms",
+                                    config.recovery.media_timeout_ms
+                                );
+                            }
+                        } else if started.elapsed() > media_timeout {
+                            break format!(
+                                "no audio source buffers received within {} ms",
+                                config.recovery.media_timeout_ms
+                            );
+                        }
                     }
                     if video_ready && last_video_buffer.elapsed() > media_timeout {
                         break format!(
@@ -332,6 +354,30 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                     };
                     if handle_tx_event(&state, &event).await {
                         break event.message();
+                    }
+                }
+                changed = events.video_ingress.changed() => {
+                    if changed.is_err() {
+                        break "video ingress heartbeat channel closed".to_string();
+                    }
+                    let heartbeat = *events.video_ingress.borrow_and_update();
+                    if heartbeat.total > video_ingress_total {
+                        if first_video_ingress.is_none() {
+                            first_video_ingress = heartbeat.observed_at;
+                        }
+                        video_ingress_total = heartbeat.total;
+                    }
+                }
+                changed = events.audio_ingress.changed() => {
+                    if changed.is_err() {
+                        break "audio ingress heartbeat channel closed".to_string();
+                    }
+                    let heartbeat = *events.audio_ingress.borrow_and_update();
+                    if heartbeat.total > audio_ingress_total {
+                        if first_audio_ingress.is_none() {
+                            first_audio_ingress = heartbeat.observed_at;
+                        }
+                        audio_ingress_total = heartbeat.total;
                     }
                 }
                 changed = events.video.changed() => {
@@ -383,7 +429,7 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         if auto_encoder
             && uses_v4l2_encoder
             && ((!video_ready
-                && (restart_reason.starts_with("no video buffers received")
+                && (restart_reason_lower.contains("encoder produced no h264")
                     || restart_reason_lower.contains("error")))
                 || restart_reason_lower.contains("v4l2h264enc"))
         {
