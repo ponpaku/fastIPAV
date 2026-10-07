@@ -30,7 +30,7 @@ fps = 30
 jitter_latency_ms = 20
 decoder_element = "avdec_h264"
 sink_element = "fakesink sync=false async=false"
-renderer = "sdl"
+renderer = "auto"
 fullscreen = false
 sync = false
 max_lateness_ms = 25
