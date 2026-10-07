@@ -159,6 +159,8 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         let started = Instant::now();
         let mut last_video_buffer = started;
         let mut last_audio_buffer = started;
+        let mut video_total = 0_u64;
+        let mut audio_total = 0_u64;
         let mut video_ready = false;
         let mut audio_ready = !config.audio.enabled;
         let mut service_ready = false;
@@ -218,33 +220,46 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                         break event.message();
                     }
                 }
-                event = events.media.recv() => {
-                    let Some(event) = event else {
-                        break "pipeline media event channel closed".to_string();
-                    };
-                    match &event {
-                        PipelineEvent::VideoBuffer { observed_at } => {
-                            last_video_buffer = *observed_at;
-                            if !video_ready {
-                                video_ready = true;
-                                info!("rx received first video buffer");
-                            }
-                        }
-                        PipelineEvent::AudioBuffer { observed_at } => {
-                            last_audio_buffer = *observed_at;
-                            if !audio_ready {
-                                audio_ready = true;
-                                info!("rx received first audio buffer");
-                            }
-                        }
-                        _ => {}
+                changed = events.video.changed() => {
+                    if changed.is_err() {
+                        break "video heartbeat channel closed".to_string();
+                    }
+                    let heartbeat = *events.video.borrow_and_update();
+                    if let Some(observed_at) = heartbeat.observed_at {
+                        last_video_buffer = observed_at;
+                    }
+                    if heartbeat.total > video_total {
+                        state.add_frames_total(heartbeat.total - video_total).await;
+                        video_total = heartbeat.total;
+                    }
+                    if !video_ready && heartbeat.total > 0 {
+                        video_ready = true;
+                        info!("rx received first video buffer");
                     }
                     if !service_ready && video_ready && audio_ready {
                         service_ready = true;
                         state.mark_ready("rx media is flowing").await;
                     }
-                    if handle_rx_event(&state, &event).await {
-                        break event.message();
+                }
+                changed = events.audio.changed() => {
+                    if changed.is_err() {
+                        break "audio heartbeat channel closed".to_string();
+                    }
+                    let heartbeat = *events.audio.borrow_and_update();
+                    if let Some(observed_at) = heartbeat.observed_at {
+                        last_audio_buffer = observed_at;
+                    }
+                    if heartbeat.total > audio_total {
+                        state.add_audio_chunks_total(heartbeat.total - audio_total).await;
+                        audio_total = heartbeat.total;
+                    }
+                    if !audio_ready && heartbeat.total > 0 {
+                        audio_ready = true;
+                        info!("rx received first audio buffer");
+                    }
+                    if !service_ready && video_ready && audio_ready {
+                        service_ready = true;
+                        state.mark_ready("rx media is flowing").await;
                     }
                 }
             }
@@ -325,14 +340,6 @@ async fn handle_rx_event(state: &SharedServiceState, event: &PipelineEvent) -> b
             state
                 .add_note("rx detected audio underrun warning from pipeline")
                 .await;
-            false
-        }
-        PipelineEvent::VideoBuffer { .. } => {
-            state.bump_frames_total().await;
-            false
-        }
-        PipelineEvent::AudioBuffer { .. } => {
-            state.bump_audio_chunks_total().await;
             false
         }
         PipelineEvent::Error(message) => {
