@@ -62,6 +62,7 @@ pub struct PipelineEvents {
     pub audio: watch::Receiver<MediaHeartbeat>,
     pub qos: watch::Receiver<u64>,
     _audio_guard: Option<watch::Sender<MediaHeartbeat>>,
+    _qos_guard: watch::Sender<u64>,
 }
 
 pub struct GstServicePipeline {
@@ -103,6 +104,7 @@ impl GstServicePipeline {
         let (video_tx, video_rx) = watch::channel(initial_heartbeat);
         let (audio_tx, audio_rx) = watch::channel(initial_heartbeat);
         let (qos_tx, qos_rx) = watch::channel(0_u64);
+        let qos_guard = qos_tx.clone();
         self.install_buffer_probe("video_monitor", video_tx)?;
         let audio_guard = if self.descriptions.audio.is_some() {
             self.install_buffer_probe("audio_monitor", audio_tx)?;
@@ -210,6 +212,7 @@ impl GstServicePipeline {
             audio: audio_rx,
             qos: qos_rx,
             _audio_guard: audio_guard,
+            _qos_guard: qos_guard,
         })
     }
 
