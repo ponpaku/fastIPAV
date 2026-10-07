@@ -84,11 +84,27 @@ detect_profile_suffix() {
 resolve_latest_version() {
   local api_url="https://api.github.com/repos/${REPO_SLUG}/releases/latest"
   local response
-  response="$(curl -fsSL "${api_url}")" ||
-    fail "failed to query latest release from ${api_url}"
-  printf '%s\n' "${response}" |
-    sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' |
-    head -n1
+  local version
+
+  if response="$(curl -fsSL "${api_url}")"; then
+    version="$(
+      printf '%s\n' "${response}" |
+        sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' |
+        head -n1
+    )"
+    if [ -n "${version}" ]; then
+      printf '%s' "${version}"
+      return
+    fi
+  fi
+
+  if command -v gh >/dev/null 2>&1; then
+    gh api "repos/${REPO_SLUG}/releases/latest" --jq '.tag_name' ||
+      fail "failed to query latest release for ${REPO_SLUG} with curl and gh"
+    return
+  fi
+
+  fail "failed to query latest release from ${api_url}"
 }
 
 artifact_name() {
