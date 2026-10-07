@@ -130,6 +130,14 @@ jobs:
           release_tag="v${workspace_version}"
           bash scripts/package-release.sh --version "${release_tag}"
 
+          if [ "${{ matrix.name }}" = "ubuntu-22.04-x86_64" ]; then
+            checksum_file="dist/fastipav-${release_tag}-linux-x86_64.sha256"
+            first_checksum="$(awk '{ print $1 }' "${checksum_file}")"
+            bash scripts/package-release.sh --version "${release_tag}"
+            second_checksum="$(awk '{ print $1 }' "${checksum_file}")"
+            test "${first_checksum}" = "${second_checksum}"
+          fi
+
           install_root="$(mktemp -d)"
           bash scripts/install.sh \
             --version "${release_tag}" \
