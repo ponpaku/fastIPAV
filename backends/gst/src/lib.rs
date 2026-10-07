@@ -199,7 +199,7 @@ impl GstServicePipeline {
                 if let Some(event) = event {
                     if event.requires_restart() {
                         terminal_tx.send_replace(Some(event));
-                        break;
+                        continue;
                     }
                     match bus_tx.try_send(event) {
                         Ok(()) | Err(mpsc::error::TrySendError::Full(_)) => {}
