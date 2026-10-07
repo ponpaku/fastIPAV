@@ -179,7 +179,13 @@ jobs:
             test "$(id -u avoverip)" -gt 0
             test "$(id -u avoverip)" -lt 1000
             grep -Fx "User=avoverip" /etc/systemd/system/avoverip-tx.service
+            grep -Fx "Group=avoverip" /etc/systemd/system/avoverip-tx.service
             grep -Fx "SupplementaryGroups=video audio" /etc/systemd/system/avoverip-tx.service
             grep -Fx "User=avoverip" /etc/systemd/system/avoverip-rx.service
+            grep -Fx "Group=avoverip" /etc/systemd/system/avoverip-rx.service
             grep -Fx "SupplementaryGroups=video audio" /etc/systemd/system/avoverip-rx.service
+            test "$(stat -c '%a' "${system_install_root}/etc/avoverip/tx.toml")" = "640"
+            test "$(stat -c '%a' "${system_install_root}/etc/avoverip/rx.toml")" = "640"
+            test "$(stat -c '%U:%G' "${system_install_root}/etc/avoverip/tx.toml")" = "root:avoverip"
+            test "$(stat -c '%U:%G' "${system_install_root}/etc/avoverip/rx.toml")" = "root:avoverip"
           fi
