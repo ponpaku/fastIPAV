@@ -572,7 +572,7 @@ fn validate_video_dimensions(width: u32, height: u32, fps: u32) -> Result<()> {
     if width > i32::MAX as u32 || height > i32::MAX as u32 {
         bail!("video width and height must fit in signed 32-bit GStreamer caps");
     }
-    if width % 2 != 0 || height % 2 != 0 {
+    if !width.is_multiple_of(2) || !height.is_multiple_of(2) {
         bail!("video width and height must be even for I420/NV12 H.264 encoding");
     }
     if fps == 0 {
