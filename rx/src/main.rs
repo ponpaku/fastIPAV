@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use avoverip_backend_gst::{GstServicePipeline, PipelineEvent};
 use avoverip_common::{
     config::{RendererKind, RxConfig},
@@ -64,8 +64,6 @@ async fn main() -> Result<()> {
     }
     config.validate()?;
 
-    let interface_name = resolve_interface_name(config.network.interface_override())
-        .context("failed to resolve multicast interface")?;
     let resolved_renderer = config
         .video
         .renderer
@@ -83,7 +81,6 @@ async fn main() -> Result<()> {
         .await;
     state.set_video_enabled(true).await;
     state.set_audio_enabled(config.audio.enabled).await;
-    state.set_interface(interface_name.clone()).await;
     state.set_renderer(resolved_renderer.clone()).await;
     state
         .set_jitter_buffer_ms(config.video.jitter_latency_ms)
@@ -137,10 +134,48 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
     tokio::pin!(shutdown);
 
     loop {
-        let interface_name = resolve_interface_name(config.network.interface_override())
-            .context("failed to resolve multicast interface")?;
+        let interface_name = match resolve_interface_name(config.network.interface_override()) {
+            Ok(interface_name) => interface_name,
+            Err(err) => {
+                let reason = format!("failed to resolve multicast interface: {err:#}");
+                state.bump_pipeline_restarts().await;
+                state.mark_failed(format!("rx startup retry: {reason}")).await;
+                warn!(
+                    "rx startup retry scheduled in {} ms: {}",
+                    config.recovery.restart_backoff_ms, reason
+                );
+                tokio::select! {
+                    _ = &mut shutdown => {
+                        state.mark_stopping("rx shutting down").await;
+                        return Ok(());
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)) => {}
+                }
+                continue;
+            }
+        };
         state.set_interface(interface_name.clone()).await;
-        let mut pipeline = GstServicePipeline::for_rx(&config, interface_name.as_deref())?;
+
+        let mut pipeline = match GstServicePipeline::for_rx(&config, interface_name.as_deref()) {
+            Ok(pipeline) => pipeline,
+            Err(err) => {
+                let reason = format!("failed to construct rx pipeline: {err:#}");
+                state.bump_pipeline_restarts().await;
+                state.mark_failed(format!("rx startup retry: {reason}")).await;
+                warn!(
+                    "rx startup retry scheduled in {} ms: {}",
+                    config.recovery.restart_backoff_ms, reason
+                );
+                tokio::select! {
+                    _ = &mut shutdown => {
+                        state.mark_stopping("rx shutting down").await;
+                        return Ok(());
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)) => {}
+                }
+                continue;
+            }
+        };
         state
             .set_pipeline_descriptions(
                 pipeline.descriptions().video.clone(),
@@ -151,8 +186,30 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
             state.set_renderer(renderer.clone()).await;
         }
 
-        state.set_state("starting_pipeline").await;
-        let mut events = pipeline.start()?;
+        state
+            .mark_waiting("starting_pipeline", "rx pipeline is starting")
+            .await;
+        let mut events = match pipeline.start() {
+            Ok(events) => events,
+            Err(err) => {
+                let reason = format!("failed to start rx pipeline: {err:#}");
+                let _ = pipeline.stop();
+                state.bump_pipeline_restarts().await;
+                state.mark_failed(format!("rx startup retry: {reason}")).await;
+                warn!(
+                    "rx startup retry scheduled in {} ms: {}",
+                    config.recovery.restart_backoff_ms, reason
+                );
+                tokio::select! {
+                    _ = &mut shutdown => {
+                        state.mark_stopping("rx shutting down").await;
+                        return Ok(());
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)) => {}
+                }
+                continue;
+            }
+        };
         if config.audio.enabled {
             state
                 .mark_waiting("waiting_for_media", "rx waiting for video and audio")
