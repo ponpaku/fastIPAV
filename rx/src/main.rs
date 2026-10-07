@@ -267,6 +267,10 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         let mut last_audio_buffer = started;
         let mut video_total = 0_u64;
         let mut audio_total = 0_u64;
+        let mut video_ingress_total = 0_u64;
+        let mut audio_ingress_total = 0_u64;
+        let mut first_video_ingress: Option<Instant> = None;
+        let mut first_audio_ingress: Option<Instant> = None;
         let mut qos_total = 0_u64;
         let mut video_ready = false;
         let mut audio_ready = !config.audio.enabled;
@@ -301,8 +305,28 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                     }
 
                     // A receiver may start before one or both transmitter branches.
-                    // Missing first media keeps health unready but is not a reason to
-                    // rebuild an otherwise valid UDP/RTP pipeline.
+                    // No ingress keeps health unready without restart. Once RTP is
+                    // arriving, however, a missing decoded output indicates a stuck
+                    // depay/decode/render path and should trigger recovery.
+                    if !video_ready
+                        && first_video_ingress
+                            .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
+                    {
+                        break format!(
+                            "video RTP is arriving but decoder produced no frames within {} ms",
+                            config.recovery.media_timeout_ms
+                        );
+                    }
+                    if config.audio.enabled
+                        && !audio_ready
+                        && first_audio_ingress
+                            .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
+                    {
+                        break format!(
+                            "audio RTP is arriving but receive path produced no audio within {} ms",
+                            config.recovery.media_timeout_ms
+                        );
+                    }
                     if video_ready && last_video_buffer.elapsed() > media_timeout {
                         break format!(
                             "video stream stalled for more than {} ms",
@@ -343,6 +367,30 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                     };
                     if handle_rx_event(&state, &event).await {
                         break event.message();
+                    }
+                }
+                changed = events.video_ingress.changed() => {
+                    if changed.is_err() {
+                        break "video ingress heartbeat channel closed".to_string();
+                    }
+                    let heartbeat = *events.video_ingress.borrow_and_update();
+                    if heartbeat.total > video_ingress_total {
+                        if first_video_ingress.is_none() {
+                            first_video_ingress = heartbeat.observed_at;
+                        }
+                        video_ingress_total = heartbeat.total;
+                    }
+                }
+                changed = events.audio_ingress.changed() => {
+                    if changed.is_err() {
+                        break "audio ingress heartbeat channel closed".to_string();
+                    }
+                    let heartbeat = *events.audio_ingress.borrow_and_update();
+                    if heartbeat.total > audio_ingress_total {
+                        if first_audio_ingress.is_none() {
+                            first_audio_ingress = heartbeat.observed_at;
+                        }
+                        audio_ingress_total = heartbeat.total;
                     }
                 }
                 changed = events.video.changed() => {
@@ -394,7 +442,8 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         if auto_decoder
             && uses_v4l2_decoder
             && ((!video_ready && restart_reason_lower.contains("error"))
-                || restart_reason_lower.contains("v4l2h264dec"))
+                || restart_reason_lower.contains("v4l2h264dec")
+                || restart_reason_lower.contains("decoder produced no frames"))
         {
             force_software_decoder = true;
             state
