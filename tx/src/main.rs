@@ -251,6 +251,8 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         let started = Instant::now();
         let mut last_video_buffer = started;
         let mut last_audio_buffer = started;
+        let mut last_video_ingress = started;
+        let mut last_audio_ingress = started;
         let mut last_video_egress = started;
         let mut last_audio_egress = started;
         let mut first_video_encoded: Option<Instant> = None;
@@ -301,8 +303,14 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                     if !video_ready {
                         if let Some(first_seen) = first_video_ingress {
                             if first_seen.elapsed() > media_timeout {
+                                if last_video_ingress.elapsed() <= media_timeout {
+                                    break format!(
+                                        "video source is flowing but encoder produced no H264 within {} ms",
+                                        config.recovery.media_timeout_ms
+                                    );
+                                }
                                 break format!(
-                                    "video source is flowing but encoder produced no H264 within {} ms",
+                                    "video source stopped before encoder produced H264 for {} ms",
                                     config.recovery.media_timeout_ms
                                 );
                             }
@@ -326,8 +334,14 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                     if config.audio.enabled && !audio_ready {
                         if let Some(first_seen) = first_audio_ingress {
                             if first_seen.elapsed() > media_timeout {
+                                if last_audio_ingress.elapsed() <= media_timeout {
+                                    break format!(
+                                        "audio source is flowing but processing produced no RTP-ready audio within {} ms",
+                                        config.recovery.media_timeout_ms
+                                    );
+                                }
                                 break format!(
-                                    "audio source is flowing but processing produced no RTP-ready audio within {} ms",
+                                    "audio source stopped before processing produced output for {} ms",
                                     config.recovery.media_timeout_ms
                                 );
                             }
@@ -350,8 +364,14 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                         );
                     }
                     if video_ready && last_video_buffer.elapsed() > media_timeout {
+                        if last_video_ingress.elapsed() <= media_timeout {
+                            break format!(
+                                "video source is flowing but encoder stalled for more than {} ms",
+                                config.recovery.media_timeout_ms
+                            );
+                        }
                         break format!(
-                            "video stream stalled for more than {} ms",
+                            "video source/encoder stream stalled for more than {} ms",
                             config.recovery.media_timeout_ms
                         );
                     }
@@ -362,8 +382,14 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                         );
                     }
                     if config.audio.enabled && audio_ready && last_audio_buffer.elapsed() > media_timeout {
+                        if last_audio_ingress.elapsed() <= media_timeout {
+                            break format!(
+                                "audio source is flowing but processing stalled for more than {} ms",
+                                config.recovery.media_timeout_ms
+                            );
+                        }
                         break format!(
-                            "audio processing stalled for more than {} ms",
+                            "audio source/processing stream stalled for more than {} ms",
                             config.recovery.media_timeout_ms
                         );
                     }
@@ -411,6 +437,9 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                         break "video ingress heartbeat channel closed".to_string();
                     }
                     let heartbeat = *events.video_ingress.borrow_and_update();
+                    if let Some(observed_at) = heartbeat.observed_at {
+                        last_video_ingress = observed_at;
+                    }
                     if heartbeat.total > video_ingress_total {
                         if first_video_ingress.is_none() {
                             first_video_ingress = heartbeat.observed_at;
@@ -423,6 +452,9 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                         break "audio ingress heartbeat channel closed".to_string();
                     }
                     let heartbeat = *events.audio_ingress.borrow_and_update();
+                    if let Some(observed_at) = heartbeat.observed_at {
+                        last_audio_ingress = observed_at;
+                    }
                     if heartbeat.total > audio_ingress_total {
                         if first_audio_ingress.is_none() {
                             first_audio_ingress = heartbeat.observed_at;
@@ -542,6 +574,7 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             && uses_v4l2_encoder
             && ((!video_ready
                 && restart_reason_lower.contains("encoder produced no h264"))
+                || restart_reason_lower.contains("encoder stalled")
                 || restart_reason_lower.contains("v4l2h264enc"))
         {
             force_software_encoder = true;
