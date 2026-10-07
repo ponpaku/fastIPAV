@@ -733,7 +733,7 @@ fn default_audio_jitter_latency_ms() -> u32 {
 }
 
 fn default_encoder_element() -> String {
-    "x264enc tune=zerolatency speed-preset=ultrafast".to_string()
+    "auto".to_string()
 }
 
 fn default_decoder_element() -> String {
