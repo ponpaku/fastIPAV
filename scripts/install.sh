@@ -510,13 +510,19 @@ for role in tx rx; do
 done
 
 if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ] && command -v systemctl >/dev/null 2>&1; then
-  as_root systemctl daemon-reload || true
-  if [ -z "${ENABLE_SERVICE}" ]; then
-    restart_active_services
+  if [ -d /run/systemd/system ]; then
+    as_root systemctl daemon-reload
+    if [ -z "${ENABLE_SERVICE}" ]; then
+      restart_active_services
+    fi
+  else
+    log "systemd manager is not running; unit files were installed but not reloaded"
   fi
 fi
 
 if [ -n "${ENABLE_SERVICE}" ]; then
+  [ -d /run/systemd/system ] ||
+    fail "--enable-service requires a running systemd manager"
   enable_services "${ENABLE_SERVICE}"
 fi
 
