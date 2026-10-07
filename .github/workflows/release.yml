@@ -25,6 +25,7 @@ jobs:
             curl \
             git \
             pkg-config \
+            shellcheck \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-tools \
@@ -54,10 +55,14 @@ jobs:
         run: |
           curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
           echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.cargo/bin/rustup" component add rustfmt clippy
 
       - name: Verify release source
         run: |
           bash -n scripts/*.sh tools/*.sh
+          shellcheck scripts/*.sh tools/*.sh
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
           cargo check --workspace --all-targets --locked
           cargo test --workspace --locked
           bash scripts/smoke-test.sh
