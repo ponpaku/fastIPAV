@@ -292,7 +292,7 @@ cargo build
 
 ## 既知の制約
 
-- `capture-to-display` は現状、設定値ベースの初期推定を返す
+- `estimated_capture_to_display_ms` はend-to-end測定probe未実装のため現状 `null`。RX jitterだけからcapture-to-display値を捏造しない
 - `estimated_av_sync_ms` / `estimated_audio_offset_ms` は設定したvideo/audio jitter buffer差に基づく推定値。video/audioは独立RTPストリームで、RTCP/rtpbinによるsender-clock同期はまだ実装していないため、実測A/V同期値としては扱わない
 - RXは送信元/SSRCを選別しない。複数TXを同時運用する場合はstreamごとにmulticast groupまたはRTP portを分け、同じgroup+portへ複数送信しない
 - RTP/UDP multicastには再送/FEC/暗号化を実装していない。packet loss耐性より低遅延を優先する構成で、信頼できるLANを前提とする
