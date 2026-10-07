@@ -145,6 +145,9 @@ impl NetworkConfig {
         if self.rtp_mtu < 28 {
             bail!("network.rtp_mtu must be at least 28 bytes");
         }
+        if self.rtp_mtu > 65_507 {
+            bail!("network.rtp_mtu must not exceed the IPv4 UDP payload limit of 65507 bytes");
+        }
         if self.receive_buffer_size > i32::MAX as u32 {
             bail!("network.receive_buffer_size must fit in a signed 32-bit GStreamer property");
         }
@@ -885,6 +888,13 @@ mod tests {
     fn rejects_too_small_rtp_mtu() {
         let mut config = TxConfig::default();
         config.network.rtp_mtu = 27;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_rtp_mtu_above_ipv4_udp_limit() {
+        let mut config = TxConfig::default();
+        config.network.rtp_mtu = 65_508;
         assert!(config.validate().is_err());
     }
 
