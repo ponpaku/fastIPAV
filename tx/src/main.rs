@@ -3,7 +3,7 @@ use avoverip_backend_gst::{GstServicePipeline, PipelineEvent};
 use avoverip_common::{
     config::TxConfig,
     metrics::{pipeline_shape, SharedServiceState},
-    net::resolve_interface_name,
+    net::resolve_interface_name_for_rtp,
     observability::{init_tracing, spawn_http_server},
 };
 use clap::Parser;
@@ -124,7 +124,10 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             cycle_config.video.encoder_element =
                 "x264enc tune=zerolatency speed-preset=ultrafast".to_string();
         }
-        let interface_name = match resolve_interface_name(config.network.interface_override()) {
+        let interface_name = match resolve_interface_name_for_rtp(
+            config.network.interface_override(),
+            config.network.rtp_mtu,
+        ) {
             Ok(interface_name) => interface_name,
             Err(err) => {
                 let reason = format!("failed to resolve multicast interface: {err:#}");
@@ -287,7 +290,10 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                     return Ok(());
                 }
                 _ = watchdog.tick() => {
-                    match resolve_interface_name(config.network.interface_override()) {
+                    match resolve_interface_name_for_rtp(
+            config.network.interface_override(),
+            config.network.rtp_mtu,
+        ) {
                         Ok(current) if current != interface_name => {
                             break format!(
                                 "multicast interface changed from {:?} to {:?}",
