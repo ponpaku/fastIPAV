@@ -177,33 +177,25 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
             Ok(pipeline) => pipeline,
             Err(err) => {
                 let reason = format!("failed to construct rx pipeline: {err:#}");
-                if auto_decoder
-                    && !force_software_decoder
-                    && reason.to_ascii_lowercase().contains("v4l2h264dec")
-                {
+                if auto_decoder && !force_software_decoder {
                     force_software_decoder = true;
+                    state.bump_pipeline_restarts().await;
                     state
-                        .add_note(
-                            "automatic v4l2h264dec pipeline failed to construct; retrying with avdec_h264",
-                        )
+                        .mark_failed(format!(
+                            "rx auto codec pipeline failed; retrying once with avdec_h264: {reason}"
+                        ))
                         .await;
+                    warn!(
+                        "rx automatic codec pipeline failed; retrying with avdec_h264: {}",
+                        reason
+                    );
+                    continue;
                 }
-                state.bump_pipeline_restarts().await;
+
                 state
-                    .mark_failed(format!("rx startup retry: {reason}"))
+                    .mark_failed(format!("rx pipeline construction failed: {reason}"))
                     .await;
-                warn!(
-                    "rx startup retry scheduled in {} ms: {}",
-                    config.recovery.restart_backoff_ms, reason
-                );
-                tokio::select! {
-                    _ = &mut shutdown => {
-                        state.mark_stopping("rx shutting down").await;
-                        return Ok(());
-                    }
-                    _ = tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)) => {}
-                }
-                continue;
+                return Err(anyhow!(reason));
             }
         };
         let uses_v4l2_decoder = pipeline.descriptions().video.contains("v4l2h264dec");
@@ -224,10 +216,7 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
             Ok(events) => events,
             Err(err) => {
                 let reason = format!("failed to start rx pipeline: {err:#}");
-                if auto_decoder
-                    && uses_v4l2_decoder
-                    && reason.to_ascii_lowercase().contains("v4l2h264dec")
-                {
+                if auto_decoder && uses_v4l2_decoder {
                     force_software_decoder = true;
                     state
                         .add_note(
