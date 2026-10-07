@@ -703,7 +703,12 @@ fn render_sink(
                 sync_value, max_lateness_ns
             ),
             PlatformProfile::LinuxPc | PlatformProfile::Auto => {
-                render_linux_sink(preferred_linux_sink(), fullscreen, sync, max_lateness_ms)
+                render_linux_sink(
+                    preferred_linux_sink(fullscreen),
+                    fullscreen,
+                    sync,
+                    max_lateness_ms,
+                )
             }
         },
         RendererKind::Sdl => render_linux_sink(LinuxSink::Sdl, fullscreen, sync, max_lateness_ms),
@@ -816,7 +821,7 @@ fn render_linux_sink(
     }
 }
 
-fn preferred_linux_sink() -> LinuxSink {
+fn preferred_linux_sink(fullscreen: bool) -> LinuxSink {
     let has_wayland = env::var_os("WAYLAND_DISPLAY").is_some();
     let has_x11 = env::var_os("DISPLAY").is_some();
 
@@ -826,7 +831,7 @@ fn preferred_linux_sink() -> LinuxSink {
     if (has_wayland || has_x11) && has_element("sdlvideosink") {
         return LinuxSink::Sdl;
     }
-    if has_x11 && has_element("ximagesink") {
+    if !fullscreen && has_x11 && has_element("ximagesink") {
         return LinuxSink::XImage;
     }
 
@@ -842,12 +847,13 @@ fn preferred_linux_sink() -> LinuxSink {
     if has_element("waylandsink") {
         return LinuxSink::Wayland;
     }
-    if has_element("ximagesink") {
+    if !fullscreen && has_element("ximagesink") {
         return LinuxSink::XImage;
     }
 
-    // Returning SDL here intentionally makes pipeline parsing fail when no
-    // supported explicit video sink plugin is installed.
+    // Returning SDL here intentionally makes parsing fail if the plugin is
+    // absent, or state change fail if no usable display backend exists.
+    // It also prevents silently ignoring fullscreen=true via ximagesink.
     LinuxSink::Sdl
 }
 
@@ -931,6 +937,13 @@ mod tests {
         assert!(fits_h264_level_4(1920, 1080, 30, 8_000));
         assert!(!fits_h264_level_4(1920, 1080, 60, 8_000));
         assert!(!fits_h264_level_4(1920, 1080, 30, 25_000));
+    }
+
+    #[test]
+    fn ximagesink_fragment_is_never_given_a_fake_fullscreen_property() {
+        let sink = render_linux_sink(LinuxSink::XImage, false, true, 25);
+        assert!(sink.starts_with("ximagesink "));
+        assert!(!sink.contains("fullscreen="));
     }
 
     #[test]
