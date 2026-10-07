@@ -125,6 +125,7 @@ impl GstServicePipeline {
         let bus_poll_interval_ms = self.bus_poll_interval_ms.max(1);
         let bus_thread = thread::spawn(move || {
             let mut qos_total = 0_u64;
+            let mut terminal_sent = false;
             while !stop_flag.load(Ordering::Relaxed) {
                 let Some(message) =
                     bus.timed_pop(gst::ClockTime::from_mseconds(bus_poll_interval_ms))
@@ -198,7 +199,10 @@ impl GstServicePipeline {
 
                 if let Some(event) = event {
                     if event.requires_restart() {
-                        terminal_tx.send_replace(Some(event));
+                        if !terminal_sent {
+                            terminal_tx.send_replace(Some(event));
+                            terminal_sent = true;
+                        }
                         continue;
                     }
                     match bus_tx.try_send(event) {
