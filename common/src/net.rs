@@ -56,34 +56,13 @@ pub fn resolve_interface_name(selection: Option<&str>) -> Result<Option<String>>
 }
 
 fn choose_auto_interface(candidates: Vec<String>) -> Result<String> {
-    if candidates.is_empty() {
-        bail!(
-            "no active multicast-capable physical interface detected; set network.interface explicitly when using a non-physical interface"
-        );
-    }
-
-    let non_wireless: Vec<&String> = candidates
-        .iter()
-        .filter(|name| !name.starts_with("wl"))
-        .collect();
-    match non_wireless.as_slice() {
-        [only] => return Ok((*only).clone()),
-        many if many.len() > 1 => {
-            bail!(
-                "multiple active wired/non-wireless multicast interfaces detected ({}); set network.interface explicitly",
-                many.iter()
-                    .map(|name| name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-        }
-        _ => {}
-    }
-
     match candidates.as_slice() {
+        [] => bail!(
+            "no active multicast-capable physical interface detected; set network.interface explicitly when using a non-physical interface"
+        ),
         [only] => Ok(only.clone()),
         _ => bail!(
-            "multiple active wireless multicast interfaces detected ({}); set network.interface explicitly",
+            "multiple active multicast interfaces detected ({}); set network.interface explicitly",
             candidates.join(", ")
         ),
     }
@@ -162,11 +141,8 @@ mod tests {
     }
 
     #[test]
-    fn auto_prefers_single_wired_interface_over_wifi() {
-        assert_eq!(
-            choose_auto_interface(names(&["eth0", "wlan0"])).unwrap(),
-            "eth0"
-        );
+    fn auto_requires_explicit_choice_when_wired_and_wifi_are_both_active() {
+        assert!(choose_auto_interface(names(&["eth0", "wlan0"])).is_err());
     }
 
     #[test]
