@@ -11,9 +11,7 @@ use std::{
     thread,
     time::Instant,
 };
-use tokio::sync::mpsc;
-
-const EVENT_CHANNEL_CAPACITY: usize = 256;
+use tokio::sync::{mpsc, watch};
 
 #[derive(Debug, Clone)]
 pub enum PipelineEvent {
@@ -24,8 +22,6 @@ pub enum PipelineEvent {
     ClockLost,
     Latency,
     AudioUnderrun,
-    VideoBuffer { observed_at: Instant },
-    AudioBuffer { observed_at: Instant },
 }
 
 impl PipelineEvent {
@@ -38,8 +34,6 @@ impl PipelineEvent {
             Self::ClockLost => "pipeline lost its clock".to_string(),
             Self::Latency => "pipeline posted latency recalculation".to_string(),
             Self::AudioUnderrun => "audio underrun detected".to_string(),
-            Self::VideoBuffer { .. } => "video buffer received".to_string(),
-            Self::AudioBuffer { .. } => "audio buffer received".to_string(),
         }
     }
 
@@ -56,9 +50,17 @@ pub struct PipelineDescriptions {
     pub renderer: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct MediaHeartbeat {
+    pub observed_at: Option<Instant>,
+    pub total: u64,
+}
+
 pub struct PipelineEvents {
     pub bus: mpsc::UnboundedReceiver<PipelineEvent>,
-    pub media: mpsc::Receiver<PipelineEvent>,
+    pub video: watch::Receiver<MediaHeartbeat>,
+    pub audio: watch::Receiver<MediaHeartbeat>,
+    _audio_guard: Option<watch::Sender<MediaHeartbeat>>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -99,11 +101,19 @@ impl GstServicePipeline {
             .bus()
             .ok_or_else(|| anyhow!("{} pipeline bus is not available", self.name))?;
         let (bus_tx, bus_rx) = mpsc::unbounded_channel();
-        let (media_tx, media_rx) = mpsc::channel(EVENT_CHANNEL_CAPACITY);
-        self.install_buffer_probe("video_monitor", MediaKind::Video, media_tx.clone())?;
-        if self.descriptions.audio.is_some() {
-            self.install_buffer_probe("audio_monitor", MediaKind::Audio, media_tx.clone())?;
-        }
+        let initial_heartbeat = MediaHeartbeat {
+            observed_at: None,
+            total: 0,
+        };
+        let (video_tx, video_rx) = watch::channel(initial_heartbeat);
+        let (audio_tx, audio_rx) = watch::channel(initial_heartbeat);
+        self.install_buffer_probe("video_monitor", MediaKind::Video, video_tx)?;
+        let audio_guard = if self.descriptions.audio.is_some() {
+            self.install_buffer_probe("audio_monitor", MediaKind::Audio, audio_tx)?;
+            None
+        } else {
+            Some(audio_tx)
+        };
 
         self.pipeline
             .set_state(gst::State::Playing)
@@ -194,15 +204,17 @@ impl GstServicePipeline {
         self.bus_thread = Some(bus_thread);
         Ok(PipelineEvents {
             bus: bus_rx,
-            media: media_rx,
+            video: video_rx,
+            audio: audio_rx,
+            _audio_guard: audio_guard,
         })
     }
 
     fn install_buffer_probe(
         &self,
         element_name: &str,
-        media_kind: MediaKind,
-        sender: mpsc::Sender<PipelineEvent>,
+        _media_kind: MediaKind,
+        sender: watch::Sender<MediaHeartbeat>,
     ) -> Result<()> {
         let element = self.pipeline.by_name(element_name).ok_or_else(|| {
             anyhow!(
@@ -218,17 +230,13 @@ impl GstServicePipeline {
                 element_name
             )
         })?;
+        let mut total = 0_u64;
         pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
-            let observed_at = Instant::now();
-            let event = match media_kind {
-                MediaKind::Video => PipelineEvent::VideoBuffer { observed_at },
-                MediaKind::Audio => PipelineEvent::AudioBuffer { observed_at },
-            };
-            // Buffer events are heartbeats/counters. Never block a GStreamer
-            // streaming thread; if the consumer is temporarily behind, dropping
-            // a heartbeat is preferable to unbounded memory growth or pipeline
-            // backpressure. Critical bus events use their own low-volume channel.
-            let _ = sender.try_send(event);
+            total = total.saturating_add(1);
+            sender.send_replace(MediaHeartbeat {
+                observed_at: Some(Instant::now()),
+                total,
+            });
             gst::PadProbeReturn::Ok
         })
         .ok_or_else(|| anyhow!("failed to install buffer probe on {}", element_name))?;
