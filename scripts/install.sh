@@ -375,6 +375,12 @@ done
 [ -x "${PACKAGE_DIR}/bin/tx" ] || fail "packaged tx binary is not executable"
 [ -x "${PACKAGE_DIR}/bin/rx" ] || fail "packaged rx binary is not executable"
 
+EXPECTED_BINARY_VERSION="${VERSION#v}"
+[ "$("${PACKAGE_DIR}/bin/tx" --version)" = "tx ${EXPECTED_BINARY_VERSION}" ] ||
+  fail "packaged tx binary version does not match ${VERSION}"
+[ "$("${PACKAGE_DIR}/bin/rx" --version)" = "rx ${EXPECTED_BINARY_VERSION}" ] ||
+  fail "packaged rx binary version does not match ${VERSION}"
+
 TX_CONFIG="${PACKAGE_DIR}/configs/tx.${PROFILE_SUFFIX}.toml"
 RX_CONFIG="${PACKAGE_DIR}/configs/rx.${PROFILE_SUFFIX}.toml"
 [ -f "${TX_CONFIG}" ] || fail "release package is missing ${TX_CONFIG#"${PACKAGE_DIR}/"}"
