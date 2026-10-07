@@ -542,6 +542,17 @@ impl RxConfig {
             if self.audio.sync_tolerance_ms == 0 {
                 bail!("audio.sync_tolerance_ms must be greater than zero when audio is enabled");
             }
+            let jitter_delta_ms = self
+                .audio
+                .jitter_latency_ms
+                .abs_diff(self.video.jitter_latency_ms) as u64;
+            if jitter_delta_ms >= self.recovery.media_timeout_ms {
+                bail!(
+                    "audio/video jitter latency difference ({} ms) must be smaller than recovery.media_timeout_ms ({} ms)",
+                    jitter_delta_ms,
+                    self.recovery.media_timeout_ms
+                );
+            }
         }
         Ok(())
     }
@@ -887,6 +898,16 @@ mod tests {
     fn rejects_video_caps_values_above_gstreamer_int_range() {
         let mut config = RxConfig::default();
         config.video.width = (i32::MAX as u32) + 1;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_jitter_difference_that_exceeds_media_timeout() {
+        let mut config = RxConfig::default();
+        config.audio.enabled = true;
+        config.video.jitter_latency_ms = 0;
+        config.audio.jitter_latency_ms = 6_000;
+        config.recovery.media_timeout_ms = 5_000;
         assert!(config.validate().is_err());
     }
 
