@@ -109,6 +109,9 @@ jobs:
           bash -n scripts/*.sh tools/*.sh
           shellcheck scripts/*.sh tools/*.sh
 
+          test "$(grep -Fc 'log "installation complete"' scripts/install.sh)" -eq 1
+          test "$(grep -Fc 'verify_package "${PACKAGE_PATH}" "${CHECKSUM_PATH}"' scripts/install.sh)" -eq 1
+
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
 
