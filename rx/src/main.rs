@@ -384,14 +384,15 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
             }
         };
 
+        let restart_reason_lower = restart_reason.to_ascii_lowercase();
         if auto_decoder
             && uses_v4l2_decoder
-            && !video_ready
-            && restart_reason.to_ascii_lowercase().contains("error")
+            && ((!video_ready && restart_reason_lower.contains("error"))
+                || restart_reason_lower.contains("v4l2h264dec"))
         {
             force_software_decoder = true;
             state
-                .add_note("automatic V4L2 H.264 decoder failed before first frame; falling back to avdec_h264")
+                .add_note("automatic V4L2 H.264 decoder became unusable; falling back to avdec_h264")
                 .await;
         }
 
