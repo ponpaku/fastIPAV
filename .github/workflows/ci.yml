@@ -29,6 +29,9 @@ jobs:
           - name: ubuntu-22.04-arm64
             runner: ubuntu-24.04-arm
             image: ubuntu:22.04
+          - name: debian-12-arm64
+            runner: ubuntu-24.04-arm
+            image: debian:12
     runs-on: ${{ matrix.runner }}
     container:
       image: ${{ matrix.image }}
@@ -85,7 +88,7 @@ jobs:
         run: bash scripts/smoke-test.sh
 
       - name: Test release packaging and local install
-        if: startsWith(matrix.name, 'ubuntu-22.04-')
+        if: startsWith(matrix.name, 'ubuntu-22.04-') || matrix.name == 'debian-12-arm64'
         run: |
           workspace_version="$(grep -m1 '^version = "' Cargo.toml | cut -d'"' -f2)"
           release_tag="v${workspace_version}"
