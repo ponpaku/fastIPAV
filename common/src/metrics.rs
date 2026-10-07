@@ -211,9 +211,7 @@ impl SharedServiceState {
         let video_pipeline = video_pipeline.into();
         let mut stats = self.stats.write().await;
         stats.video_pipeline = Some(pipeline_shape(&video_pipeline));
-        stats.audio_pipeline = audio_pipeline
-            .as_deref()
-            .map(pipeline_shape);
+        stats.audio_pipeline = audio_pipeline.as_deref().map(pipeline_shape);
     }
 
     pub async fn add_frames_total(&self, delta: u64) {
