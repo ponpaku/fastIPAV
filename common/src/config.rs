@@ -293,7 +293,7 @@ pub struct RxVideoConfig {
     #[serde(default = "default_sink_sync")]
     pub sync: bool,
     #[serde(default = "default_video_max_lateness_ms")]
-    pub max_lateness_ms: u32,
+    pub max_lateness_ms: i64,
 }
 
 impl Default for RxVideoConfig {
@@ -519,6 +519,12 @@ impl RxConfig {
         self.recovery.validate()?;
         validate_video_dimensions(self.video.width, self.video.height, self.video.fps)?;
         validate_media_timeout(self.recovery.media_timeout_ms, self.video.fps)?;
+        if self.video.max_lateness_ms < -1 {
+            bail!("video.max_lateness_ms must be -1 (unlimited) or a non-negative value");
+        }
+        if self.video.max_lateness_ms > i64::MAX / 1_000_000 {
+            bail!("video.max_lateness_ms is too large");
+        }
 
         if self.audio.enabled {
             validate_audio(
@@ -751,8 +757,8 @@ fn default_sink_sync() -> bool {
     true
 }
 
-fn default_video_max_lateness_ms() -> u32 {
-    25
+fn default_video_max_lateness_ms() -> i64 {
+    -1
 }
 
 fn default_audio_late_threshold_ms() -> u32 {
@@ -820,6 +826,13 @@ mod tests {
     fn rejects_unicast_group() {
         let mut config = TxConfig::default();
         config.network.multicast_group = "192.168.1.10".to_string();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_negative_video_max_lateness() {
+        let mut config = RxConfig::default();
+        config.video.max_lateness_ms = -2;
         assert!(config.validate().is_err());
     }
 
