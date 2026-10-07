@@ -87,7 +87,6 @@ dependencies = [
  "avoverip-common",
  "gstreamer",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -97,7 +96,6 @@ dependencies = [
  "anyhow",
  "axum",
  "serde",
- "serde_json",
  "tokio",
  "toml 0.8.23",
  "tracing",
