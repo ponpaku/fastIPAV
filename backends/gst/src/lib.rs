@@ -658,7 +658,7 @@ fn is_audio_source_name(source: &str) -> bool {
 
 fn select_h264_decoder(config: &RxConfig) -> String {
     let requested = config.video.decoder_element.trim();
-    if requested.is_empty() || requested == "decodebin" || requested == "auto" {
+    if requested.is_empty() || requested == "auto" {
         return preferred_h264_decoder(&config.platform.profile);
     }
     requested.to_string()
