@@ -450,6 +450,10 @@ as_root "${PACKAGE_DIR}/bin/tx" --config "${TX_CONFIG_TO_CHECK}" --check-config 
 as_root "${PACKAGE_DIR}/bin/rx" --config "${RX_CONFIG_TO_CHECK}" --check-config >/dev/null \
   || fail "rx config is not compatible with ${VERSION}: ${RX_CONFIG_TO_CHECK}"
 
+if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
+  ensure_service_user
+fi
+
 log "installing binaries to ${PREFIX}/bin"
 as_root install -d "${PREFIX}/bin"
 for role in tx rx; do
@@ -483,9 +487,6 @@ PREFIX_SED="$(escape_sed_replacement "${PREFIX}")"
 CONFIG_DIR_SED="$(escape_sed_replacement "${CONFIG_DIR}")"
 
 log "installing systemd unit files to ${SYSTEMD_DIR}"
-if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
-  ensure_service_user
-fi
 as_root install -d "${SYSTEMD_DIR}"
 for role in tx rx; do
   unit_source="${PACKAGE_DIR}/systemd/avoverip-${role}.service"
