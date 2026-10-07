@@ -460,16 +460,18 @@ as_root cp -f "${PACKAGE_DIR}/configs/"*.toml "${SHARE_DIR}/configs/"
 as_root cp -f "${PACKAGE_DIR}/systemd/"*.service "${SHARE_DIR}/systemd/"
 
 log "installing default config files to ${CONFIG_DIR}"
-as_root install -d "${CONFIG_DIR}"
+as_root install -d -m 0755 "${CONFIG_DIR}"
 if [ ! -f "${CONFIG_DIR}/tx.toml" ]; then
   as_root install -m 0644 "${TX_CONFIG}" "${CONFIG_DIR}/tx.toml"
 else
   log "keeping existing ${CONFIG_DIR}/tx.toml"
+  as_root chmod 0644 "${CONFIG_DIR}/tx.toml"
 fi
 if [ ! -f "${CONFIG_DIR}/rx.toml" ]; then
   as_root install -m 0644 "${RX_CONFIG}" "${CONFIG_DIR}/rx.toml"
 else
   log "keeping existing ${CONFIG_DIR}/rx.toml"
+  as_root chmod 0644 "${CONFIG_DIR}/rx.toml"
 fi
 
 PREFIX_SED="$(escape_sed_replacement "${PREFIX}")"
