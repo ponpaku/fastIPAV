@@ -175,8 +175,10 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         };
         state.set_interface(interface_name.clone()).await;
 
-        let mut pipeline =
-            match GstServicePipeline::for_rx(&cycle_config, interface_name.as_deref()) {
+        let mut pipeline = match GstServicePipeline::for_rx(
+            &cycle_config,
+            interface_name.as_deref(),
+        ) {
             Ok(pipeline) => pipeline,
             Err(err) => {
                 let reason = format!("failed to construct rx pipeline: {err:#}");
