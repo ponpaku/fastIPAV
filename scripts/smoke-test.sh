@@ -140,6 +140,23 @@ printf '%s' "${RX_WAIT_STATS}" | grep -q '"pipeline_restarts":0' || {
   exit 1
 }
 
+# Once one expected stream arrives, the receiver must not wait forever for
+# the missing companion stream. Exercise video-only TX against audio-enabled RX.
+VIDEO_ONLY_CONFIG="${TMP_DIR}/tx.video-only.toml"
+sed 's/enabled = true/enabled = false/' configs/tx.smoketest.toml >"${VIDEO_ONLY_CONFIG}"
+"${TX_BIN}" --config "${VIDEO_ONLY_CONFIG}" >"${TX_LOG}" 2>&1 &
+tx_pid=$!
+wait_for_health "tx-video-only" "http://127.0.0.1:18081/healthz" "${tx_pid}"
+sleep 7
+RX_PARTIAL_STATS="$(curl -fsS "http://127.0.0.1:18082/stats")"
+printf '%s' "${RX_PARTIAL_STATS}" | grep -Eq '"pipeline_restarts":[1-9][0-9]*' || {
+  printf '[smoke-test] rx did not recover from partial video-only media\n' >&2
+  exit 1
+}
+kill -TERM "${tx_pid}"
+wait "${tx_pid}"
+tx_pid=""
+
 "${TX_BIN}" --config configs/tx.smoketest.toml >"${TX_LOG}" 2>&1 &
 tx_pid=$!
 
