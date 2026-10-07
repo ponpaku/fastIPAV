@@ -575,9 +575,9 @@ fn rx_video_branch(
         concat!(
             "udpsrc address={group} port={port} auto-multicast=true mtu={mtu}{iface}{buffer_size} caps={caps} ",
             "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
+            "! identity name=video_ingress_monitor silent=true ",
             "! rtph264depay wait-for-keyframe=true ",
             "! video/x-h264,stream-format=byte-stream,alignment=au ",
-            "! identity name=video_ingress_monitor silent=true ",
             "! h264parse ",
             "! {decoder} ",
             "! videoconvert ",
@@ -632,8 +632,8 @@ fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
         concat!(
             "udpsrc address={group} port={port} auto-multicast=true mtu={mtu}{iface}{buffer_size} caps={caps} ",
             "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
-            "! rtpL16depay ",
             "! identity name=audio_ingress_monitor silent=true ",
+            "! rtpL16depay ",
             "! audioconvert ",
             "! audioresample ",
             "! audio/x-raw,format=S16LE,layout=interleaved,rate={sample_rate},channels={channels} ",
