@@ -118,6 +118,7 @@ ls -l /dev/video*
 
 - `scripts/install.sh` は Raspberry Pi を検出すると `configs/tx.pi.toml` と `configs/rx.pi.toml` を既定として `/etc/avoverip/` に配置する
 - Raspberry Pi 5 はH.264 hardware codecを持たないため `avdec_h264` などのsoftware decoderを優先する。旧Piでは利用可能なら `v4l2h264dec` を優先する
+- Pi送信の`encoder_element = "auto"`は、Pi 4以前で利用可能なら`v4l2h264enc`、Pi 5系では`x264enc`を選ぶ
 - UVC キャプチャを使う場合は `video.device` を必要に応じて変更する
 
 ## Linux PC のセットアップ
