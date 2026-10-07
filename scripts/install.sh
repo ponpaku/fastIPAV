@@ -407,7 +407,12 @@ MANIFEST_ARCH="$(manifest_value "${PACKAGE_DIR}" arch)"
 [ "${MANIFEST_ARCH}" = "${ARCH}" ] ||
   fail "release manifest architecture mismatch: expected ${ARCH}, got ${MANIFEST_ARCH:-<empty>}"
 
-for required in bin/tx bin/rx LICENSE; do
+for required in \
+  bin/tx \
+  bin/rx \
+  LICENSE \
+  systemd/avoverip-tx.service \
+  systemd/avoverip-rx.service; do
   [ -e "${PACKAGE_DIR}/${required}" ] ||
     fail "release package is missing ${required}"
 done
