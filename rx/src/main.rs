@@ -393,7 +393,9 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         {
             force_software_decoder = true;
             state
-                .add_note("automatic V4L2 H.264 decoder became unusable; falling back to avdec_h264")
+                .add_note(
+                    "automatic V4L2 H.264 decoder became unusable; falling back to avdec_h264",
+                )
                 .await;
         }
 
