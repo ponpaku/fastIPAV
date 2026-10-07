@@ -176,31 +176,28 @@ jobs:
 
       - name: Verify packaged binaries on target userland
         run: |
-          archive="$(find dist -maxdepth 1 -name '*.tar.gz' -print -quit)"
-          checksum="$(find dist -maxdepth 1 -name '*.sha256' -print -quit)"
-          test -n "${archive}"
-          test -n "${checksum}"
-          (
-            cd dist
-            sha256sum -c "$(basename "${checksum}")"
-          )
-          package_name="$(basename "${archive}" .tar.gz)"
-          test -n "${package_name}"
-          tar -xzf "${archive}" -C dist
-          package_dir="dist/${package_name}"
+          install_root="$(mktemp -d)"
+          bash scripts/install.sh \
+            --version "${GITHUB_REF_NAME}" \
+            --local-dist \
+            --prefix "${install_root}/usr/local" \
+            --config-dir "${install_root}/etc/avoverip" \
+            --systemd-dir "${install_root}/systemd"
 
-          "${package_dir}/bin/tx" --version
-          "${package_dir}/bin/rx" --version
-          "${package_dir}/bin/tx" --config "${package_dir}/configs/tx.default.toml" --check-config
-          "${package_dir}/bin/rx" --config "${package_dir}/configs/rx.default.toml" --check-config
+          "${install_root}/usr/local/bin/tx" --version
+          "${install_root}/usr/local/bin/rx" --version
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
-            "${package_dir}/bin/tx" --config "${package_dir}/configs/tx.pi.toml" --check-config
-            "${package_dir}/bin/rx" --config "${package_dir}/configs/rx.pi.toml" --check-config
+            "${install_root}/usr/local/bin/tx" \
+              --config "${install_root}/usr/local/share/fastipav/configs/tx.pi.toml" \
+              --check-config
+            "${install_root}/usr/local/bin/rx" \
+              --config "${install_root}/usr/local/share/fastipav/configs/rx.pi.toml" \
+              --check-config
           fi
 
-          TX_BIN="${package_dir}/bin/tx" \
-          RX_BIN="${package_dir}/bin/rx" \
-          CONFIG_DIR="${package_dir}/configs" \
+          TX_BIN="${install_root}/usr/local/bin/tx" \
+          RX_BIN="${install_root}/usr/local/bin/rx" \
+          CONFIG_DIR="${install_root}/usr/local/share/fastipav/configs" \
             bash scripts/smoke-test.sh
 
   publish:
