@@ -152,32 +152,33 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         };
         state.set_interface(interface_name.clone()).await;
 
-        let mut pipeline =
-            match GstServicePipeline::for_tx(&cycle_config, interface_name.as_deref()) {
-                Ok(pipeline) => pipeline,
-                Err(err) => {
-                    let reason = format!("failed to construct tx pipeline: {err:#}");
-                    if auto_encoder && !force_software_encoder {
-                        force_software_encoder = true;
-                        state.bump_pipeline_restarts().await;
-                        state
-                            .mark_failed(format!(
-                                "tx auto codec pipeline failed; retrying once with x264: {reason}"
-                            ))
-                            .await;
-                        warn!(
-                            "tx automatic codec pipeline failed; retrying with x264: {}",
-                            reason
-                        );
-                        continue;
-                    }
-
+        let pipeline_result =
+            GstServicePipeline::for_tx(&cycle_config, interface_name.as_deref());
+        let mut pipeline = match pipeline_result {
+            Ok(pipeline) => pipeline,
+            Err(err) => {
+                let reason = format!("failed to construct tx pipeline: {err:#}");
+                if auto_encoder && !force_software_encoder {
+                    force_software_encoder = true;
+                    state.bump_pipeline_restarts().await;
                     state
-                        .mark_failed(format!("tx pipeline construction failed: {reason}"))
+                        .mark_failed(format!(
+                            "tx auto codec pipeline failed; retrying once with x264: {reason}"
+                        ))
                         .await;
-                    return Err(anyhow!(reason));
+                    warn!(
+                        "tx automatic codec pipeline failed; retrying with x264: {}",
+                        reason
+                    );
+                    continue;
                 }
-            };
+
+                state
+                    .mark_failed(format!("tx pipeline construction failed: {reason}"))
+                    .await;
+                return Err(anyhow!(reason));
+            }
+        };
         let uses_v4l2_encoder = pipeline.descriptions().video.contains("v4l2h264enc");
         state
             .set_pipeline_descriptions(
