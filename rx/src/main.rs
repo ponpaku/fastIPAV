@@ -179,6 +179,12 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
             Ok(pipeline) => pipeline,
             Err(err) => {
                 let reason = format!("failed to construct rx pipeline: {err:#}");
+                if auto_decoder && !force_software_decoder {
+                    force_software_decoder = true;
+                    state
+                        .add_note("automatic codec pipeline failed to construct; retrying with avdec_h264")
+                        .await;
+                }
                 state.bump_pipeline_restarts().await;
                 state
                     .mark_failed(format!("rx startup retry: {reason}"))
