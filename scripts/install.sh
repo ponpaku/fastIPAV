@@ -335,6 +335,19 @@ done
 
 [ "$(uname -s)" = "Linux" ] || fail "this installer supports Linux only"
 
+trim_trailing_slashes() {
+  local value="$1"
+  while [ "${value}" != "/" ] && [ "${value%/}" != "${value}" ]; do
+    value="${value%/}"
+  done
+  printf '%s' "${value}"
+}
+
+PREFIX="$(trim_trailing_slashes "${PREFIX}")"
+CONFIG_DIR="$(trim_trailing_slashes "${CONFIG_DIR}")"
+SYSTEMD_DIR="$(trim_trailing_slashes "${SYSTEMD_DIR}")"
+SHARE_DIR="${PREFIX}/share/fastipav"
+
 for path_value in "${PREFIX}" "${CONFIG_DIR}" "${SYSTEMD_DIR}"; do
   case "${path_value}" in
     /*) ;;
