@@ -442,8 +442,14 @@ impl TxConfig {
         if self.video.bitrate_kbps == 0 {
             bail!("video.bitrate_kbps must be greater than zero");
         }
+        if (self.video.bitrate_kbps as u64) * 1_000 > i32::MAX as u64 {
+            bail!("video.bitrate_kbps is too large for V4L2 bitrate controls");
+        }
         if self.video.gop == 0 {
             bail!("video.gop must be greater than zero");
+        }
+        if self.video.gop > i32::MAX as u32 {
+            bail!("video.gop is too large for V4L2 encoder controls");
         }
         if self.video.source_element.trim().is_empty() && self.video.device.trim().is_empty() {
             bail!("video.device must not be empty when video.source_element is not set");
@@ -832,6 +838,13 @@ mod tests {
     fn rejects_invalid_multicast_ttl() {
         let mut config = TxConfig::default();
         config.network.ttl = 256;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_video_bitrate_above_v4l2_control_range() {
+        let mut config = TxConfig::default();
+        config.video.bitrate_kbps = (i32::MAX as u32 / 1_000) + 1;
         assert!(config.validate().is_err());
     }
 
