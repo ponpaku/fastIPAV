@@ -523,7 +523,7 @@ fn rx_video_branch(
         .to_string();
     let pipeline = format!(
         concat!(
-            "udpsrc address={group} port={port} auto-multicast=true{iface}{buffer_size} caps={caps} ",
+            "udpsrc address={group} port={port} auto-multicast=true mtu={mtu}{iface}{buffer_size} caps={caps} ",
             "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
             "! rtph264depay wait-for-keyframe=true ",
             "! h264parse ",
@@ -540,6 +540,7 @@ fn rx_video_branch(
         buffer_size = buffer_size_fragment,
         caps = quoted(&caps),
         latency_ms = config.video.jitter_latency_ms,
+        mtu = config.network.rtp_mtu,
         decoder = decoder,
         width = config.video.width,
         height = config.video.height,
@@ -577,7 +578,7 @@ fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
     );
     format!(
         concat!(
-            "udpsrc address={group} port={port} auto-multicast=true{iface}{buffer_size} caps={caps} ",
+            "udpsrc address={group} port={port} auto-multicast=true mtu={mtu}{iface}{buffer_size} caps={caps} ",
             "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
             "! rtpL16depay ",
             "! audioconvert ",
@@ -593,6 +594,7 @@ fn rx_audio_branch(config: &RxConfig, interface_name: Option<&str>) -> String {
         buffer_size = buffer_size_fragment,
         caps = quoted(&caps),
         latency_ms = config.audio.jitter_latency_ms,
+        mtu = config.network.rtp_mtu,
         sample_rate = config.audio.sample_rate,
         channels = config.audio.channels,
         sink = sink,
