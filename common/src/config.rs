@@ -581,6 +581,9 @@ fn validate_audio(
     if latency_time_us <= 0 {
         bail!("audio.latency_time_us must be greater than zero");
     }
+    if latency_time_us > buffer_time_us {
+        bail!("audio.latency_time_us must not exceed audio.buffer_time_us");
+    }
     Ok(())
 }
 
@@ -828,6 +831,15 @@ mod tests {
     fn rejects_video_caps_values_above_gstreamer_int_range() {
         let mut config = RxConfig::default();
         config.video.width = (i32::MAX as u32) + 1;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_audio_latency_larger_than_buffer() {
+        let mut config = TxConfig::default();
+        config.audio.enabled = true;
+        config.audio.buffer_time_us = 5_000;
+        config.audio.latency_time_us = 10_000;
         assert!(config.validate().is_err());
     }
 
