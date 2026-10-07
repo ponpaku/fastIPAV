@@ -21,6 +21,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Install workflow lint dependencies
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
       - name: Install actionlint
         run: |
           curl -fsSL \
@@ -31,7 +34,7 @@ jobs:
           /tmp/actionlint -version
 
       - name: Lint GitHub Actions workflows
-        run: /tmp/actionlint -shellcheck= -pyflakes=
+        run: /tmp/actionlint -shellcheck=shellcheck -pyflakes=
 
       - name: Install stable Rust
         run: |
