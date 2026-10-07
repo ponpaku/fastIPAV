@@ -831,6 +831,22 @@ mod tests {
     }
 
     #[test]
+    fn explicit_renderer_and_decoder_choices_are_honored() {
+        let sink = render_sink(
+            &RendererKind::Sdl,
+            &PlatformProfile::LinuxPc,
+            false,
+            true,
+            25,
+        );
+        assert!(sink.starts_with("sdlvideosink "));
+
+        let mut rx = RxConfig::default();
+        rx.video.decoder_element = "decodebin".to_string();
+        assert_eq!(select_h264_decoder(&rx), "decodebin");
+    }
+
+    #[test]
     fn supported_linux_sink_fragments_parse() {
         init_gstreamer().unwrap();
 
