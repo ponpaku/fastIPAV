@@ -95,6 +95,32 @@ wait_for_unhealthy() {
   return 1
 }
 
+wait_for_restart_increment() {
+  local role="$1"
+  local url="$2"
+  local pid="$3"
+  local baseline="$4"
+  local stats=""
+  local current=""
+
+  for _ in $(seq 1 60); do
+    if ! kill -0 "${pid}" 2>/dev/null; then
+      printf '[smoke-test] %s exited while waiting for pipeline restart\n' "${role}" >&2
+      return 1
+    fi
+    stats="$(curl -fsS "${url}" 2>/dev/null || true)"
+    current="$(json_u64_field "${stats}" pipeline_restarts)"
+    if [ -n "${current}" ] && [ "${current}" -gt "${baseline}" ]; then
+      printf '[smoke-test] %s pipeline restart observed\n' "${role}"
+      return 0
+    fi
+    sleep 0.2
+  done
+
+  printf '[smoke-test] timed out waiting for %s pipeline restart\n' "${role}" >&2
+  return 1
+}
+
 command -v curl >/dev/null 2>&1 || {
   printf '[smoke-test] curl is required\n' >&2
   exit 1
@@ -236,4 +262,45 @@ wait "${rx_pid}"
 tx_pid=""
 rx_pid=""
 
-printf '[smoke-test] tx/rx media flow, stall detection, and recovery passed\n'
+# RTP ingress without decoded video must not be mistaken for an offline TX.
+# Drop decoded video after avdec_h264 while leaving RTP ingress intact.
+DROP_RX_CONFIG="${TMP_DIR}/rx.drop-video.toml"
+sed \
+  -e 's/port = 18082/port = 18084/' \
+  -e 's/media_timeout_ms = 5000/media_timeout_ms = 1200/' \
+  -e 's#decoder_element = "avdec_h264"#decoder_element = "avdec_h264 ! valve drop=true"#' \
+  "${CONFIG_DIR}/rx.smoketest.toml" >"${DROP_RX_CONFIG}"
+
+"${RX_BIN}" --config "${DROP_RX_CONFIG}" >"${TMP_DIR}/rx-drop-video.log" 2>&1 &
+rx_pid=$!
+sleep 0.5
+DROP_RX_STATS="$(curl -fsS "http://127.0.0.1:18084/stats")"
+DROP_RX_RESTARTS_BEFORE="$(json_u64_field "${DROP_RX_STATS}" pipeline_restarts)"
+[ -n "${DROP_RX_RESTARTS_BEFORE}" ] || {
+  printf '[smoke-test] could not read drop-video rx restart count\n' >&2
+  exit 1
+}
+
+"${TX_BIN}" --config "${CONFIG_DIR}/tx.smoketest.toml" >"${TX_LOG}" 2>&1 &
+tx_pid=$!
+wait_for_health "tx-drop-video-test" "http://127.0.0.1:18081/healthz" "${tx_pid}"
+wait_for_restart_increment   "rx-drop-video"   "http://127.0.0.1:18084/stats"   "${rx_pid}"   "${DROP_RX_RESTARTS_BEFORE}"
+
+DROP_RX_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:18084/healthz" 2>/dev/null || true)"
+[ "${DROP_RX_STATUS}" = "503" ] || {
+  printf '[smoke-test] rx with decoded-video drop should remain unhealthy\n' >&2
+  exit 1
+}
+DROP_RX_STATS="$(curl -fsS "http://127.0.0.1:18084/stats")"
+printf '%s' "${DROP_RX_STATS}" | grep -q 'decoder produced no frames' || {
+  printf '[smoke-test] rx did not report RTP ingress without decoded video\n' >&2
+  exit 1
+}
+
+kill -TERM "${tx_pid}" "${rx_pid}"
+wait "${tx_pid}"
+wait "${rx_pid}"
+tx_pid=""
+rx_pid=""
+
+printf '[smoke-test] tx/rx media flow, ingress detection, stall detection, and recovery passed\n'
