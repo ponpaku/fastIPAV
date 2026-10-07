@@ -349,6 +349,13 @@ async fn handle_rx_event(state: &SharedServiceState, event: &PipelineEvent) -> b
                 .await;
             false
         }
+        PipelineEvent::Qos(source) => {
+            state.bump_qos_events().await;
+            state
+                .add_note(format!("rx pipeline QoS event from {source}"))
+                .await;
+            false
+        }
         PipelineEvent::AudioUnderrun => {
             state.bump_audio_underruns().await;
             state
