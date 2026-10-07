@@ -96,6 +96,8 @@ jobs:
 
           test -x "${install_root}/usr/local/bin/tx"
           test -x "${install_root}/usr/local/bin/rx"
+          test "$("${install_root}/usr/local/bin/tx" --version)" = "tx ${workspace_version}"
+          test "$("${install_root}/usr/local/bin/rx" --version)" = "rx ${workspace_version}"
           test -f "${install_root}/usr/local/share/fastipav/LICENSE"
           test -f "${install_root}/etc/avoverip/tx.toml"
           test -f "${install_root}/etc/avoverip/rx.toml"
