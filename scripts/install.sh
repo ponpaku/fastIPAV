@@ -364,6 +364,21 @@ RX_CONFIG="${PACKAGE_DIR}/configs/rx.${PROFILE_SUFFIX}.toml"
 [ -f "${TX_CONFIG}" ] || fail "release package is missing ${TX_CONFIG#"${PACKAGE_DIR}/"}"
 [ -f "${RX_CONFIG}" ] || fail "release package is missing ${RX_CONFIG#"${PACKAGE_DIR}/"}"
 
+TX_CONFIG_TO_CHECK="${TX_CONFIG}"
+RX_CONFIG_TO_CHECK="${RX_CONFIG}"
+if [ -f "${CONFIG_DIR}/tx.toml" ]; then
+  TX_CONFIG_TO_CHECK="${CONFIG_DIR}/tx.toml"
+fi
+if [ -f "${CONFIG_DIR}/rx.toml" ]; then
+  RX_CONFIG_TO_CHECK="${CONFIG_DIR}/rx.toml"
+fi
+
+log "validating effective config files with the new binaries"
+as_root "${PACKAGE_DIR}/bin/tx" --config "${TX_CONFIG_TO_CHECK}" --check-config >/dev/null \
+  || fail "tx config is not compatible with ${VERSION}: ${TX_CONFIG_TO_CHECK}"
+as_root "${PACKAGE_DIR}/bin/rx" --config "${RX_CONFIG_TO_CHECK}" --check-config >/dev/null \
+  || fail "rx config is not compatible with ${VERSION}: ${RX_CONFIG_TO_CHECK}"
+
 log "installing binaries to ${PREFIX}/bin"
 as_root install -d "${PREFIX}/bin"
 as_root install -m 0755 "${PACKAGE_DIR}/bin/tx" "${PREFIX}/bin/tx"
