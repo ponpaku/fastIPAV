@@ -12,17 +12,18 @@ TX_LOG="${TMP_DIR}/tx.log"
 RX_LOG="${TMP_DIR}/rx.log"
 tx_pid=""
 rx_pid=""
+retry_pid=""
 
 cleanup() {
   local status=$?
   trap - EXIT
 
-  for pid in "${tx_pid}" "${rx_pid}"; do
+  for pid in "${tx_pid}" "${rx_pid}" "${retry_pid}"; do
     if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
       kill -TERM "${pid}" 2>/dev/null || true
     fi
   done
-  for pid in "${tx_pid}" "${rx_pid}"; do
+  for pid in "${tx_pid}" "${rx_pid}" "${retry_pid}"; do
     if [ -n "${pid}" ]; then
       wait "${pid}" 2>/dev/null || true
     fi
@@ -100,8 +101,44 @@ if [ ! -x "${TX_BIN}" ] || [ ! -x "${RX_BIN}" ]; then
   cargo build --workspace --locked
 fi
 
+RETRY_CONFIG="${TMP_DIR}/tx.retry.toml"
+sed \
+  -e 's/interface = "lo"/interface = "fastipav-missing0"/' \
+  -e 's/port = 18081/port = 18083/' \
+  configs/tx.smoketest.toml >"${RETRY_CONFIG}"
+
+"${TX_BIN}" --config "${RETRY_CONFIG}" >"${TMP_DIR}/tx-retry.log" 2>&1 &
+retry_pid=$!
+wait_for_unhealthy "tx-startup-retry" "http://127.0.0.1:18083/healthz" "${retry_pid}"
+sleep 2
+RETRY_STATS="$(curl -fsS "http://127.0.0.1:18083/stats")"
+printf '%s' "${RETRY_STATS}" | grep -Eq '"pipeline_restarts":[1-9][0-9]*' || {
+  printf '[smoke-test] startup retry did not increment pipeline_restarts\n' >&2
+  exit 1
+}
+kill -TERM "${retry_pid}"
+wait "${retry_pid}"
+retry_pid=""
+
 "${RX_BIN}" --config configs/rx.smoketest.toml >"${RX_LOG}" 2>&1 &
 rx_pid=$!
+
+# Receiver must be allowed to wait longer than media_timeout_ms for a sender.
+sleep 6
+if ! kill -0 "${rx_pid}" 2>/dev/null; then
+  printf '[smoke-test] rx exited while transmitter was offline\n' >&2
+  exit 1
+fi
+RX_WAIT_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:18082/healthz" 2>/dev/null || true)"
+[ "${RX_WAIT_STATUS}" = "503" ] || {
+  printf '[smoke-test] rx should remain unhealthy while waiting for transmitter\n' >&2
+  exit 1
+}
+RX_WAIT_STATS="$(curl -fsS "http://127.0.0.1:18082/stats")"
+printf '%s' "${RX_WAIT_STATS}" | grep -q '"pipeline_restarts":0' || {
+  printf '[smoke-test] rx restarted while merely waiting for an offline transmitter\n' >&2
+  exit 1
+}
 
 "${TX_BIN}" --config configs/tx.smoketest.toml >"${TX_LOG}" 2>&1 &
 tx_pid=$!
