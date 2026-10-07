@@ -596,7 +596,7 @@ fn select_h264_decoder(config: &RxConfig) -> String {
 }
 
 fn preferred_h264_decoder(profile: &PlatformProfile) -> String {
-    match profile {
+    match profile.resolve() {
         PlatformProfile::RaspberryPi => {
             let candidates: &[&str] = if is_raspberry_pi_5_family() {
                 &["avdec_h264", "openh264dec", "decodebin"]
