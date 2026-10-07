@@ -270,7 +270,6 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         let mut qos_total = 0_u64;
         let mut video_ready = false;
         let mut audio_ready = !config.audio.enabled;
-        let mut partial_media_since: Option<Instant> = None;
         let mut service_ready = false;
         let media_timeout = Duration::from_millis(config.recovery.media_timeout_ms);
         let mut watchdog =
@@ -301,26 +300,9 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                         _ => {}
                     }
 
-                    // A receiver is allowed to start before its transmitter.
-                    // If neither expected stream has arrived, stay unhealthy without
-                    // rebuilding. Once only one of video/audio arrives, the missing
-                    // companion stream must appear within media_timeout_ms.
-                    if let Some(partial_since) = partial_media_since {
-                        if partial_since.elapsed() > media_timeout {
-                            if video_ready && !audio_ready {
-                                break format!(
-                                    "video arrived but no audio buffers were received within {} ms",
-                                    config.recovery.media_timeout_ms
-                                );
-                            }
-                            if audio_ready && !video_ready {
-                                break format!(
-                                    "audio arrived but no video buffers were received within {} ms",
-                                    config.recovery.media_timeout_ms
-                                );
-                            }
-                        }
-                    }
+                    // A receiver may start before one or both transmitter branches.
+                    // Missing first media keeps health unready but is not a reason to
+                    // rebuild an otherwise valid UDP/RTP pipeline.
                     if video_ready && last_video_buffer.elapsed() > media_timeout {
                         break format!(
                             "video stream stalled for more than {} ms",
@@ -377,13 +359,7 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                     }
                     if !video_ready && heartbeat.total > 0 {
                         video_ready = true;
-                        if config.audio.enabled && !audio_ready {
-                            partial_media_since = Some(Instant::now());
-                        }
                         info!("rx received first video buffer");
-                    }
-                    if video_ready && audio_ready {
-                        partial_media_since = None;
                     }
                     if !service_ready && video_ready && audio_ready {
                         service_ready = true;
@@ -404,13 +380,7 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                     }
                     if !audio_ready && heartbeat.total > 0 {
                         audio_ready = true;
-                        if !video_ready {
-                            partial_media_since = Some(Instant::now());
-                        }
                         info!("rx received first audio buffer");
-                    }
-                    if video_ready && audio_ready {
-                        partial_media_since = None;
                     }
                     if !service_ready && video_ready && audio_ready {
                         service_ready = true;
