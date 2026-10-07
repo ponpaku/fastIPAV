@@ -182,6 +182,11 @@ install_deps() {
 ensure_service_user() {
   need_cmd id
   if id -u avoverip >/dev/null 2>&1; then
+    local existing_uid
+    existing_uid="$(id -u avoverip)"
+    if [ "${existing_uid}" -eq 0 ] || [ "${existing_uid}" -ge 1000 ]; then
+      fail "existing user avoverip (uid ${existing_uid}) is not a dedicated system account"
+    fi
     return
   fi
 
