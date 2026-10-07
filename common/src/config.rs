@@ -561,6 +561,9 @@ fn validate_video_dimensions(width: u32, height: u32, fps: u32) -> Result<()> {
     if width > i32::MAX as u32 || height > i32::MAX as u32 {
         bail!("video width and height must fit in signed 32-bit GStreamer caps");
     }
+    if width % 2 != 0 || height % 2 != 0 {
+        bail!("video width and height must be even for I420/NV12 H.264 encoding");
+    }
     if fps == 0 {
         bail!("video.fps must be greater than zero");
     }
@@ -833,6 +836,13 @@ mod tests {
     fn rejects_invalid_negative_video_max_lateness() {
         let mut config = RxConfig::default();
         config.video.max_lateness_ms = -2;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_odd_video_dimensions() {
+        let mut config = TxConfig::default();
+        config.video.width = 1919;
         assert!(config.validate().is_err());
     }
 
