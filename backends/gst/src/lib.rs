@@ -455,25 +455,26 @@ fn select_h264_encoder(config: &TxConfig) -> (String, &'static str) {
             config.platform.profile.resolve(),
             PlatformProfile::RaspberryPi
         ) && !is_raspberry_pi_5_family()
-            && fits_h264_level_4(
-                config.video.width,
-                config.video.height,
-                config.video.fps,
-                config.video.bitrate_kbps,
-            )
             && config.video.bitrate_kbps >= 25
             && config.video.bitrate_kbps.is_multiple_of(25)
             && config.video.gop >= 2
             && has_element("v4l2h264enc")
         {
-            let bitrate_bps = (config.video.bitrate_kbps as u64) * 1_000;
-            return (
-                format!(
-                    "v4l2h264enc extra-controls=\"controls,repeat_sequence_header=1,video_bitrate={},h264_i_frame_period={}\" ! video/x-h264,level=(string)4",
-                    bitrate_bps, config.video.gop
-                ),
-                ",format=NV12",
-            );
+            if let Some(level) = pi_v4l2_h264_level(
+                config.video.width,
+                config.video.height,
+                config.video.fps,
+                config.video.bitrate_kbps,
+            ) {
+                let bitrate_bps = (config.video.bitrate_kbps as u64) * 1_000;
+                return (
+                    format!(
+                        "v4l2h264enc extra-controls=\"controls,repeat_sequence_header=1,video_bitrate={},h264_i_frame_period={}\" ! video/x-h264,level=(string){}",
+                        bitrate_bps, config.video.gop, level
+                    ),
+                    ",format=NV12",
+                );
+            }
         }
 
         return (
@@ -507,19 +508,29 @@ fn select_h264_encoder(config: &TxConfig) -> (String, &'static str) {
     }
 }
 
-fn fits_h264_level_4(width: u32, height: u32, fps: u32, bitrate_kbps: u32) -> bool {
+fn pi_v4l2_h264_level(
+    width: u32,
+    height: u32,
+    fps: u32,
+    bitrate_kbps: u32,
+) -> Option<&'static str> {
     const MAX_MACROBLOCKS_PER_FRAME: u64 = 8_192;
     const MAX_MACROBLOCKS_PER_SECOND: u64 = 245_760;
-    const MAX_BASELINE_BITRATE_KBPS: u32 = 20_000;
+    const MAX_SAFE_BITRATE_KBPS: u32 = 20_000;
 
     let macroblocks_wide = (width as u64).div_ceil(16);
     let macroblocks_high = (height as u64).div_ceil(16);
     let macroblocks_per_frame = macroblocks_wide.saturating_mul(macroblocks_high);
     let macroblocks_per_second = macroblocks_per_frame.saturating_mul(fps as u64);
 
-    macroblocks_per_frame <= MAX_MACROBLOCKS_PER_FRAME
-        && macroblocks_per_second <= MAX_MACROBLOCKS_PER_SECOND
-        && bitrate_kbps <= MAX_BASELINE_BITRATE_KBPS
+    if macroblocks_per_frame > MAX_MACROBLOCKS_PER_FRAME
+        || macroblocks_per_second > MAX_MACROBLOCKS_PER_SECOND
+        || bitrate_kbps > MAX_SAFE_BITRATE_KBPS
+    {
+        return None;
+    }
+
+    Some(if bitrate_kbps > 10_000 { "4.1" } else { "4" })
 }
 
 fn tx_audio_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
@@ -943,6 +954,13 @@ mod tests {
         let sink = render_linux_sink(LinuxSink::XImage, false, true, 25);
         assert!(sink.starts_with("ximagesink "));
         assert!(!sink.contains("fullscreen="));
+    }
+
+    #[test]
+    fn pi_v4l2_level_tracks_high_bitrate_guidance() {
+        assert_eq!(pi_v4l2_h264_level(1920, 1080, 30, 8_000), Some("4"));
+        assert_eq!(pi_v4l2_h264_level(1920, 1080, 30, 15_000), Some("4.1"));
+        assert_eq!(pi_v4l2_h264_level(1920, 1080, 60, 8_000), None);
     }
 
     #[test]
