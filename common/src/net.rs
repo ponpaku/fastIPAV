@@ -1,7 +1,18 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::fs;
 
 const IFF_MULTICAST: u32 = 0x1000;
+
+pub fn resolve_interface_name_for_rtp(
+    selection: Option<&str>,
+    rtp_mtu: u32,
+) -> Result<Option<String>> {
+    let interface = resolve_interface_name(selection)?;
+    if let Some(name) = interface.as_deref() {
+        validate_interface_rtp_mtu(name, rtp_mtu)?;
+    }
+    Ok(interface)
+}
 
 pub fn resolve_interface_name(selection: Option<&str>) -> Result<Option<String>> {
     if let Some(explicit) = selection {
@@ -87,6 +98,32 @@ fn list_interfaces() -> Result<Vec<String>> {
     Ok(names)
 }
 
+fn validate_interface_rtp_mtu(name: &str, rtp_mtu: u32) -> Result<()> {
+    let path = format!("/sys/class/net/{}/mtu", name);
+    let contents = fs::read_to_string(&path)
+        .with_context(|| format!("failed to read link MTU for interface {}", name))?;
+    let link_mtu: u32 = contents
+        .trim()
+        .parse()
+        .with_context(|| format!("invalid link MTU for interface {}", name))?;
+
+    if !rtp_mtu_fits_ipv4_link(link_mtu, rtp_mtu) {
+        let max_rtp_mtu = link_mtu.saturating_sub(28);
+        bail!(
+            "network.rtp_mtu {} would exceed interface {} link MTU {} after IPv4/UDP overhead; use at most {}",
+            rtp_mtu,
+            name,
+            link_mtu,
+            max_rtp_mtu
+        );
+    }
+    Ok(())
+}
+
+fn rtp_mtu_fits_ipv4_link(link_mtu: u32, rtp_mtu: u32) -> bool {
+    rtp_mtu.saturating_add(28) <= link_mtu
+}
+
 fn interface_exists(name: &str) -> bool {
     fs::metadata(format!("/sys/class/net/{}", name)).is_ok()
 }
@@ -115,6 +152,13 @@ mod tests {
 
     fn names(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    #[test]
+    fn rtp_mtu_accounts_for_ipv4_udp_overhead() {
+        assert!(rtp_mtu_fits_ipv4_link(1500, 1472));
+        assert!(!rtp_mtu_fits_ipv4_link(1500, 1473));
+        assert!(rtp_mtu_fits_ipv4_link(65536, 1200));
     }
 
     #[test]
