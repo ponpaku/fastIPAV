@@ -139,10 +139,7 @@ fn default_config_path() -> String {
 async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<()> {
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
-    let auto_decoder = matches!(
-        config.video.decoder_element.trim(),
-        "" | "auto" | "decodebin"
-    );
+    let auto_decoder = matches!(config.video.decoder_element.trim(), "" | "auto");
     let mut force_software_decoder = false;
 
     loop {
