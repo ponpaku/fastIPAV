@@ -402,6 +402,12 @@ fn select_h264_encoder(config: &TxConfig) -> (String, &'static str) {
             config.platform.profile.resolve(),
             PlatformProfile::RaspberryPi
         ) && !is_raspberry_pi_5_family()
+            && fits_h264_level_4(
+                config.video.width,
+                config.video.height,
+                config.video.fps,
+                config.video.bitrate_kbps,
+            )
             && has_element("v4l2h264enc")
         {
             let bitrate_bps = (config.video.bitrate_kbps as u64) * 1_000;
@@ -443,6 +449,21 @@ fn select_h264_encoder(config: &TxConfig) -> (String, &'static str) {
         // names or raw input formats, so leave both untouched.
         (encoder, "")
     }
+}
+
+fn fits_h264_level_4(width: u32, height: u32, fps: u32, bitrate_kbps: u32) -> bool {
+    const MAX_MACROBLOCKS_PER_FRAME: u64 = 8_192;
+    const MAX_MACROBLOCKS_PER_SECOND: u64 = 245_760;
+    const MAX_BASELINE_BITRATE_KBPS: u32 = 20_000;
+
+    let macroblocks_wide = (width as u64).div_ceil(16);
+    let macroblocks_high = (height as u64).div_ceil(16);
+    let macroblocks_per_frame = macroblocks_wide.saturating_mul(macroblocks_high);
+    let macroblocks_per_second = macroblocks_per_frame.saturating_mul(fps as u64);
+
+    macroblocks_per_frame <= MAX_MACROBLOCKS_PER_FRAME
+        && macroblocks_per_second <= MAX_MACROBLOCKS_PER_SECOND
+        && bitrate_kbps <= MAX_BASELINE_BITRATE_KBPS
 }
 
 fn tx_audio_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
@@ -837,6 +858,13 @@ mod tests {
             GstServicePipeline::for_rx(&config, Some("lo"))
                 .unwrap_or_else(|err| panic!("failed to parse {name}: {err:#}"));
         }
+    }
+
+    #[test]
+    fn h264_level_4_limits_cover_1080p30_but_not_1080p60() {
+        assert!(fits_h264_level_4(1920, 1080, 30, 8_000));
+        assert!(!fits_h264_level_4(1920, 1080, 60, 8_000));
+        assert!(!fits_h264_level_4(1920, 1080, 30, 25_000));
     }
 
     #[test]
