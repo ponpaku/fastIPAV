@@ -442,6 +442,20 @@ impl TxConfig {
         validate_video_dimensions(self.video.width, self.video.height, self.video.fps)?;
         validate_media_timeout(self.recovery.media_timeout_ms, self.video.fps)?;
 
+        let encoder = self.video.encoder_element.trim();
+        let encoder_requires_420 = encoder.is_empty()
+            || encoder == "auto"
+            || (!encoder.contains('!')
+                && encoder
+                    .split_whitespace()
+                    .next()
+                    .is_some_and(|name| name == "x264enc"));
+        if encoder_requires_420
+            && (!self.video.width.is_multiple_of(2) || !self.video.height.is_multiple_of(2))
+        {
+            bail!("video width and height must be even for automatic/x264 I420/NV12 encoding");
+        }
+
         if self.video.bitrate_kbps == 0 {
             bail!("video.bitrate_kbps must be greater than zero");
         }
@@ -528,6 +542,13 @@ impl RxConfig {
         self.recovery.validate()?;
         validate_video_dimensions(self.video.width, self.video.height, self.video.fps)?;
         validate_media_timeout(self.recovery.media_timeout_ms, self.video.fps)?;
+        if self.video.jitter_latency_ms as u64 >= self.recovery.media_timeout_ms {
+            bail!(
+                "video.jitter_latency_ms ({} ms) must be smaller than recovery.media_timeout_ms ({} ms)",
+                self.video.jitter_latency_ms,
+                self.recovery.media_timeout_ms
+            );
+        }
         if self.video.max_lateness_ms < -1 {
             bail!("video.max_lateness_ms must be -1 (unlimited) or a non-negative value");
         }
@@ -544,6 +565,13 @@ impl RxConfig {
             )?;
             if self.audio.sink_element.trim().is_empty() && self.audio.device.trim().is_empty() {
                 bail!("audio.device must not be empty when audio.sink_element is not set");
+            }
+            if self.audio.jitter_latency_ms as u64 >= self.recovery.media_timeout_ms {
+                bail!(
+                    "audio.jitter_latency_ms ({} ms) must be smaller than recovery.media_timeout_ms ({} ms)",
+                    self.audio.jitter_latency_ms,
+                    self.recovery.media_timeout_ms
+                );
             }
             if self.audio.late_threshold_ms == 0 {
                 bail!("audio.late_threshold_ms must be greater than zero when audio is enabled");
@@ -580,9 +608,6 @@ fn validate_video_dimensions(width: u32, height: u32, fps: u32) -> Result<()> {
     }
     if width > i32::MAX as u32 || height > i32::MAX as u32 {
         bail!("video width and height must fit in signed 32-bit GStreamer caps");
-    }
-    if !width.is_multiple_of(2) || !height.is_multiple_of(2) {
-        bail!("video width and height must be even for I420/NV12 H.264 encoding");
     }
     if fps == 0 {
         bail!("video.fps must be greater than zero");
@@ -901,6 +926,28 @@ mod tests {
         config.video.gop = 150;
         config.recovery.media_timeout_ms = 5_000;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rx_rejects_jitter_latency_at_or_above_media_timeout() {
+        let mut config = RxConfig::default();
+        config.video.jitter_latency_ms = config.recovery.media_timeout_ms as u32;
+        assert!(config.validate().is_err());
+
+        let mut audio_config = RxConfig::default();
+        audio_config.audio.enabled = true;
+        audio_config.audio.jitter_latency_ms =
+            audio_config.recovery.media_timeout_ms as u32;
+        assert!(audio_config.validate().is_err());
+    }
+
+    #[test]
+    fn custom_tx_encoder_may_use_odd_dimensions() {
+        let mut config = TxConfig::default();
+        config.video.width = 641;
+        config.video.height = 481;
+        config.video.encoder_element = "identity".to_string();
+        assert!(config.validate().is_ok());
     }
 
     #[test]
