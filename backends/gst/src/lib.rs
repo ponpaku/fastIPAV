@@ -366,6 +366,7 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
             "! video/x-raw,width={width},height={height},framerate={fps}/1{encoder_input_caps} ",
             "! {encoder} ",
             "! h264parse config-interval=-1 ",
+            "! video/x-h264,stream-format=byte-stream,alignment=au ",
             "! identity name=video_monitor silent=true ",
             "! rtph264pay pt={payload_type} config-interval=1 mtu={mtu} ",
             "! udpsink host={group} port={port} auto-multicast=true ttl-mc={ttl} sync=false async=false{iface}"
