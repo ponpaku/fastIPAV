@@ -109,8 +109,174 @@ jobs:
           bash -n scripts/*.sh tools/*.sh
           shellcheck scripts/*.sh tools/*.sh
 
-          test "$(grep -Fc 'log "installation complete"' scripts/install.sh)" -eq 1
-          test "$(grep -Fc 'verify_package "${PACKAGE_PATH}" "${CHECKSUM_PATH}"' scripts/install.sh)" -eq 1
+          install_done_marker='log "installation complete"'
+          verify_marker='verify_package "
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Check workspace
+        run: cargo check --workspace --all-targets --locked
+
+      - name: Run unit tests
+        run: cargo test --workspace --locked
+
+      - name: Run loopback smoke test
+        run: bash scripts/smoke-test.sh
+
+      - name: Test release packaging and local install
+        if: startsWith(matrix.name, 'ubuntu-22.04-') || matrix.name == 'debian-12-arm64'
+        run: |
+          workspace_version="$(grep -m1 '^version = "' Cargo.toml | cut -d'"' -f2)"
+          release_tag="v${workspace_version}"
+          bash scripts/package-release.sh --version "${release_tag}"
+
+          install_root="$(mktemp -d)"
+          bash scripts/install.sh \
+            --version "${release_tag}" \
+            --local-dist \
+            --prefix "${install_root}/usr/local" \
+            --config-dir "${install_root}/etc/avoverip" \
+            --systemd-dir "${install_root}/systemd"
+
+          test -x "${install_root}/usr/local/bin/tx"
+          test -x "${install_root}/usr/local/bin/rx"
+          test "$("${install_root}/usr/local/bin/tx" --version)" = "tx ${workspace_version}"
+          test "$("${install_root}/usr/local/bin/rx" --version)" = "rx ${workspace_version}"
+          test -f "${install_root}/usr/local/share/fastipav/LICENSE"
+          test -f "${install_root}/etc/avoverip/tx.toml"
+          test -f "${install_root}/etc/avoverip/rx.toml"
+          grep -F "ExecStart=${install_root}/usr/local/bin/tx --config ${install_root}/etc/avoverip/tx.toml" \
+            "${install_root}/systemd/avoverip-tx.service"
+          grep -F "ExecStart=${install_root}/usr/local/bin/rx --config ${install_root}/etc/avoverip/rx.toml" \
+            "${install_root}/systemd/avoverip-rx.service"
+
+          chmod 0600 "${install_root}/etc/avoverip/tx.toml" "${install_root}/etc/avoverip/rx.toml"
+          bash scripts/install.sh \
+            --version "${release_tag}" \
+            --local-dist \
+            --prefix "${install_root}/usr/local" \
+            --config-dir "${install_root}/etc/avoverip" \
+            --systemd-dir "${install_root}/systemd"
+          test "$(stat -c '%a' "${install_root}/etc/avoverip/tx.toml")" = "600"
+          test "$(stat -c '%a' "${install_root}/etc/avoverip/rx.toml")" = "600"
+
+          PATH=/usr/bin:/bin \
+          TX_BIN="${install_root}/usr/local/bin/tx" \
+          RX_BIN="${install_root}/usr/local/bin/rx" \
+          CONFIG_DIR="${install_root}/usr/local/share/fastipav/configs" \
+            bash scripts/smoke-test.sh
+
+          if [ "${{ matrix.name }}" = "ubuntu-22.04-x86_64" ]; then
+            system_install_root="$(mktemp -d)"
+            chmod 0755 "${system_install_root}"
+            bash scripts/install.sh \
+              --version "${release_tag}" \
+              --local-dist \
+              --prefix "${system_install_root}/usr/local" \
+              --config-dir "${system_install_root}/etc/avoverip"
+
+            id -u avoverip >/dev/null
+            test "$(id -u avoverip)" -gt 0
+            test "$(id -u avoverip)" -lt 1000
+            grep -Fx "User=avoverip" /etc/systemd/system/avoverip-tx.service
+            grep -Fx "Group=avoverip" /etc/systemd/system/avoverip-tx.service
+            grep -Fx "SupplementaryGroups=video audio" /etc/systemd/system/avoverip-tx.service
+            grep -Fx "User=avoverip" /etc/systemd/system/avoverip-rx.service
+            grep -Fx "Group=avoverip" /etc/systemd/system/avoverip-rx.service
+            grep -Fx "SupplementaryGroups=video audio" /etc/systemd/system/avoverip-rx.service
+            test "$(stat -c '%a' "${system_install_root}/etc/avoverip/tx.toml")" = "640"
+            test "$(stat -c '%a' "${system_install_root}/etc/avoverip/rx.toml")" = "640"
+            test "$(stat -c '%U:%G' "${system_install_root}/etc/avoverip/tx.toml")" = "root:avoverip"
+            test "$(stat -c '%U:%G' "${system_install_root}/etc/avoverip/rx.toml")" = "root:avoverip"
+          fi
+'{PACKAGE_PATH}" "
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Check workspace
+        run: cargo check --workspace --all-targets --locked
+
+      - name: Run unit tests
+        run: cargo test --workspace --locked
+
+      - name: Run loopback smoke test
+        run: bash scripts/smoke-test.sh
+
+      - name: Test release packaging and local install
+        if: startsWith(matrix.name, 'ubuntu-22.04-') || matrix.name == 'debian-12-arm64'
+        run: |
+          workspace_version="$(grep -m1 '^version = "' Cargo.toml | cut -d'"' -f2)"
+          release_tag="v${workspace_version}"
+          bash scripts/package-release.sh --version "${release_tag}"
+
+          install_root="$(mktemp -d)"
+          bash scripts/install.sh \
+            --version "${release_tag}" \
+            --local-dist \
+            --prefix "${install_root}/usr/local" \
+            --config-dir "${install_root}/etc/avoverip" \
+            --systemd-dir "${install_root}/systemd"
+
+          test -x "${install_root}/usr/local/bin/tx"
+          test -x "${install_root}/usr/local/bin/rx"
+          test "$("${install_root}/usr/local/bin/tx" --version)" = "tx ${workspace_version}"
+          test "$("${install_root}/usr/local/bin/rx" --version)" = "rx ${workspace_version}"
+          test -f "${install_root}/usr/local/share/fastipav/LICENSE"
+          test -f "${install_root}/etc/avoverip/tx.toml"
+          test -f "${install_root}/etc/avoverip/rx.toml"
+          grep -F "ExecStart=${install_root}/usr/local/bin/tx --config ${install_root}/etc/avoverip/tx.toml" \
+            "${install_root}/systemd/avoverip-tx.service"
+          grep -F "ExecStart=${install_root}/usr/local/bin/rx --config ${install_root}/etc/avoverip/rx.toml" \
+            "${install_root}/systemd/avoverip-rx.service"
+
+          chmod 0600 "${install_root}/etc/avoverip/tx.toml" "${install_root}/etc/avoverip/rx.toml"
+          bash scripts/install.sh \
+            --version "${release_tag}" \
+            --local-dist \
+            --prefix "${install_root}/usr/local" \
+            --config-dir "${install_root}/etc/avoverip" \
+            --systemd-dir "${install_root}/systemd"
+          test "$(stat -c '%a' "${install_root}/etc/avoverip/tx.toml")" = "600"
+          test "$(stat -c '%a' "${install_root}/etc/avoverip/rx.toml")" = "600"
+
+          PATH=/usr/bin:/bin \
+          TX_BIN="${install_root}/usr/local/bin/tx" \
+          RX_BIN="${install_root}/usr/local/bin/rx" \
+          CONFIG_DIR="${install_root}/usr/local/share/fastipav/configs" \
+            bash scripts/smoke-test.sh
+
+          if [ "${{ matrix.name }}" = "ubuntu-22.04-x86_64" ]; then
+            system_install_root="$(mktemp -d)"
+            chmod 0755 "${system_install_root}"
+            bash scripts/install.sh \
+              --version "${release_tag}" \
+              --local-dist \
+              --prefix "${system_install_root}/usr/local" \
+              --config-dir "${system_install_root}/etc/avoverip"
+
+            id -u avoverip >/dev/null
+            test "$(id -u avoverip)" -gt 0
+            test "$(id -u avoverip)" -lt 1000
+            grep -Fx "User=avoverip" /etc/systemd/system/avoverip-tx.service
+            grep -Fx "Group=avoverip" /etc/systemd/system/avoverip-tx.service
+            grep -Fx "SupplementaryGroups=video audio" /etc/systemd/system/avoverip-tx.service
+            grep -Fx "User=avoverip" /etc/systemd/system/avoverip-rx.service
+            grep -Fx "Group=avoverip" /etc/systemd/system/avoverip-rx.service
+            grep -Fx "SupplementaryGroups=video audio" /etc/systemd/system/avoverip-rx.service
+            test "$(stat -c '%a' "${system_install_root}/etc/avoverip/tx.toml")" = "640"
+            test "$(stat -c '%a' "${system_install_root}/etc/avoverip/rx.toml")" = "640"
+            test "$(stat -c '%U:%G' "${system_install_root}/etc/avoverip/tx.toml")" = "root:avoverip"
+            test "$(stat -c '%U:%G' "${system_install_root}/etc/avoverip/rx.toml")" = "root:avoverip"
+          fi
+'{CHECKSUM_PATH}"'
+          test "$(grep -Fc "${install_done_marker}" scripts/install.sh)" -eq 1
+          test "$(grep -Fc "${verify_marker}" scripts/install.sh)" -eq 1
 
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
