@@ -64,6 +64,13 @@ wait_for_health() {
   return 1
 }
 
+json_u64_field() {
+  local json="$1"
+  local field="$2"
+  printf '%s' "${json}" |
+    sed -n "s/.*\"${field}\":\([0-9][0-9]*\).*/\1/p"
+}
+
 wait_for_unhealthy() {
   local role="$1"
   local url="$2"
@@ -184,14 +191,30 @@ printf '%s' "${RX_STATS}" | grep -Eq '"audio_chunks_total":[1-9][0-9]*' || {
 }
 
 # Verify that an established receiver detects media loss, restarts, and recovers.
+RX_STATS="$(curl -fsS "http://127.0.0.1:18082/stats")"
+RX_RESTARTS_BEFORE="$(json_u64_field "${RX_STATS}" pipeline_restarts)"
+[ -n "${RX_RESTARTS_BEFORE}" ] || {
+  printf '[smoke-test] could not read rx pipeline_restarts before media loss\n' >&2
+  exit 1
+}
+
 kill -TERM "${tx_pid}"
 wait "${tx_pid}"
 tx_pid=""
 
 wait_for_unhealthy "rx" "http://127.0.0.1:18082/healthz" "${rx_pid}"
-RX_STATS="$(curl -fsS "http://127.0.0.1:18082/stats")"
-printf '%s' "${RX_STATS}" | grep -Eq '"pipeline_restarts":[1-9][0-9]*' || {
-  printf '[smoke-test] rx did not report a pipeline restart after media loss\n' >&2
+for _ in $(seq 1 20); do
+  RX_STATS="$(curl -fsS "http://127.0.0.1:18082/stats")"
+  RX_RESTARTS_AFTER="$(json_u64_field "${RX_STATS}" pipeline_restarts)"
+  if [ -n "${RX_RESTARTS_AFTER}" ] &&
+    [ "${RX_RESTARTS_AFTER}" -gt "${RX_RESTARTS_BEFORE}" ]; then
+    break
+  fi
+  sleep 0.2
+done
+[ -n "${RX_RESTARTS_AFTER:-}" ] &&
+  [ "${RX_RESTARTS_AFTER}" -gt "${RX_RESTARTS_BEFORE}" ] || {
+  printf '[smoke-test] rx restart count did not increase after established media loss\n' >&2
   exit 1
 }
 
