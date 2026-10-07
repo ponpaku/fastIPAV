@@ -1,5 +1,8 @@
 use anyhow::{anyhow, Context, Result};
-use avoverip_common::config::{PlatformProfile, RendererKind, RxConfig, TxConfig};
+use avoverip_common::{
+    config::{PlatformProfile, RendererKind, RxConfig, TxConfig},
+    metrics::pipeline_shape,
+};
 use gst::prelude::*;
 use gstreamer as gst;
 use std::{
@@ -591,12 +594,9 @@ fn rx_video_branch(
     } else {
         config.video.sink_element.clone()
     };
-    let renderer_name = sink
-        .rsplit('!')
-        .next()
-        .unwrap_or(&sink)
-        .split_whitespace()
-        .next()
+    let renderer_name = pipeline_shape(&sink)
+        .split(" ! ")
+        .next_back()
         .unwrap_or("unknown")
         .to_string();
     let pipeline = format!(
