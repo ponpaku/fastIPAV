@@ -118,7 +118,7 @@ ls -l /dev/video*
 補足:
 
 - `scripts/install.sh` は Raspberry Pi を検出すると `configs/tx.pi.toml` と `configs/rx.pi.toml` を既定として `/etc/avoverip/` に配置する
-- H.264 decoder は backend 側で `v4l2h264dec` などを優先し、無ければ `avdec_h264` へフォールバックする
+- Raspberry Pi 5 はH.264 hardware codecを持たないため `avdec_h264` などのsoftware decoderを優先する。旧Piでは利用可能なら `v4l2h264dec` を優先する
 - UVC キャプチャを使う場合は `video.device` を必要に応じて変更する
 
 ## Linux PC のセットアップ
@@ -136,7 +136,7 @@ gst-inspect-1.0 waylandsink
 
 補足:
 
-- `sdlvideosink` が無い環境では、実装側で `waylandsink` / `ximagesink` / `autovideosink` に自動フォールバックする
+- desktop rendererは表示sessionに応じて `waylandsink` → `sdlvideosink` → `ximagesink` を選び、適合する明示sinkが無い場合のみ `autovideosink` を使う
 - UVC 入力が見えているかは `ls -l /dev/video*` で確認する
 - 音声入出力は `arecord -l` `aplay -l` で確認する
 - TX audioは既定でALSA driver timestampではなくpipeline clockを使い、videoの`do-timestamp=true`と同じclock domainへ寄せる
