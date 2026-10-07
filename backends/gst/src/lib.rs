@@ -318,32 +318,7 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
     } else {
         config.video.source_element.clone()
     };
-    let encoder = if config.video.encoder_element.trim().is_empty() {
-        "x264enc tune=zerolatency speed-preset=ultrafast".to_string()
-    } else {
-        config.video.encoder_element.clone()
-    };
-    let encoder_is_x264 = !encoder.contains('!')
-        && encoder
-            .split_whitespace()
-            .next()
-            .is_some_and(|name| name == "x264enc");
-    let encoder = if encoder_is_x264 {
-        format!(
-            "{} bitrate={} key-int-max={} bframes=0 aud=true byte-stream=true",
-            encoder, config.video.bitrate_kbps, config.video.gop
-        )
-    } else {
-        // Non-x264 encoders use different property names/units. Treat a custom
-        // encoder_element as a complete configured fragment instead of
-        // appending x264-only properties that would make the pipeline invalid.
-        encoder
-    };
-    let encoder_input_caps = if encoder_is_x264 {
-        " ! video/x-raw,format=I420"
-    } else {
-        ""
-    };
+    let (encoder, encoder_input_caps) = select_h264_encoder(config);
     let source_caps = if config.video.source_caps.trim().is_empty() {
         format!(
             "video/x-raw,width={},height={},framerate={}/1",
@@ -381,6 +356,55 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
         ttl = config.network.ttl,
         iface = interface_fragment,
     )
+}
+
+fn select_h264_encoder(config: &TxConfig) -> (String, &'static str) {
+    let requested = config.video.encoder_element.trim();
+
+    if requested.is_empty() || requested == "auto" {
+        if matches!(config.platform.profile.resolve(), PlatformProfile::RaspberryPi)
+            && !is_raspberry_pi_5_family()
+            && has_element("v4l2h264enc")
+        {
+            let bitrate_bps = (config.video.bitrate_kbps as u64) * 1_000;
+            return (
+                format!(
+                    "v4l2h264enc extra-controls=\"controls,repeat_sequence_header=1,video_bitrate={},h264_i_frame_period={}\"",
+                    bitrate_bps, config.video.gop
+                ),
+                " ! video/x-raw,format=NV12",
+            );
+        }
+
+        return (
+            format!(
+                "x264enc tune=zerolatency speed-preset=ultrafast bitrate={} key-int-max={} bframes=0 aud=true byte-stream=true",
+                config.video.bitrate_kbps, config.video.gop
+            ),
+            " ! video/x-raw,format=I420",
+        );
+    }
+
+    let encoder = config.video.encoder_element.clone();
+    let encoder_is_x264 = !encoder.contains('!')
+        && encoder
+            .split_whitespace()
+            .next()
+            .is_some_and(|name| name == "x264enc");
+
+    if encoder_is_x264 {
+        (
+            format!(
+                "{} bitrate={} key-int-max={} bframes=0 aud=true byte-stream=true",
+                encoder, config.video.bitrate_kbps, config.video.gop
+            ),
+            " ! video/x-raw,format=I420",
+        )
+    } else {
+        // A custom encoder fragment is complete and may have different property
+        // names or raw input formats, so leave both untouched.
+        (encoder, "")
+    }
 }
 
 fn tx_audio_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
