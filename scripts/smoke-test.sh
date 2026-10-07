@@ -213,11 +213,11 @@ for _ in $(seq 1 20); do
   fi
   sleep 0.2
 done
-[ -n "${RX_RESTARTS_AFTER:-}" ] &&
-  [ "${RX_RESTARTS_AFTER}" -gt "${RX_RESTARTS_BEFORE}" ] || {
+if [ -z "${RX_RESTARTS_AFTER:-}" ] ||
+  [ "${RX_RESTARTS_AFTER}" -le "${RX_RESTARTS_BEFORE}" ]; then
   printf '[smoke-test] rx restart count did not increase after established media loss\n' >&2
   exit 1
-}
+fi
 
 "${TX_BIN}" --config "${CONFIG_DIR}/tx.smoketest.toml" >"${TX_LOG}" 2>&1 &
 tx_pid=$!
