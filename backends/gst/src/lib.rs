@@ -64,10 +64,7 @@ pub struct PipelineEvents {
     pub video: watch::Receiver<MediaHeartbeat>,
     pub audio: watch::Receiver<MediaHeartbeat>,
     pub qos: watch::Receiver<u64>,
-    _bus_guard: mpsc::Sender<PipelineEvent>,
-    _terminal_guard: watch::Sender<Option<PipelineEvent>>,
     _audio_guard: Option<watch::Sender<MediaHeartbeat>>,
-    _qos_guard: watch::Sender<u64>,
 }
 
 pub struct GstServicePipeline {
@@ -102,9 +99,7 @@ impl GstServicePipeline {
             .bus()
             .ok_or_else(|| anyhow!("{} pipeline bus is not available", self.name))?;
         let (bus_tx, bus_rx) = mpsc::channel(BUS_EVENT_CAPACITY);
-        let bus_guard = bus_tx.clone();
         let (terminal_tx, terminal_rx) = watch::channel(None::<PipelineEvent>);
-        let terminal_guard = terminal_tx.clone();
         let initial_heartbeat = MediaHeartbeat {
             observed_at: None,
             total: 0,
@@ -112,7 +107,6 @@ impl GstServicePipeline {
         let (video_tx, video_rx) = watch::channel(initial_heartbeat);
         let (audio_tx, audio_rx) = watch::channel(initial_heartbeat);
         let (qos_tx, qos_rx) = watch::channel(0_u64);
-        let qos_guard = qos_tx.clone();
         self.install_buffer_probe("video_monitor", video_tx)?;
         let audio_guard = if self.descriptions.audio.is_some() {
             self.install_buffer_probe("audio_monitor", audio_tx)?;
@@ -221,10 +215,7 @@ impl GstServicePipeline {
             video: video_rx,
             audio: audio_rx,
             qos: qos_rx,
-            _bus_guard: bus_guard,
-            _terminal_guard: terminal_guard,
             _audio_guard: audio_guard,
-            _qos_guard: qos_guard,
         })
     }
 
