@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use avoverip_backend_gst::{GstServicePipeline, PipelineEvent};
 use avoverip_common::{
     config::{RendererKind, RxConfig},
-    metrics::SharedServiceState,
+    metrics::{pipeline_shape, SharedServiceState},
     net::resolve_interface_name,
     observability::{init_tracing, spawn_http_server},
 };
@@ -257,9 +257,12 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                 .await;
             info!("rx pipeline launched; waiting for first video buffer");
         }
-        info!("rx video pipeline: {}", pipeline.descriptions().video);
+        info!(
+            "rx video pipeline: {}",
+            pipeline_shape(&pipeline.descriptions().video)
+        );
         if let Some(audio_pipeline) = &pipeline.descriptions().audio {
-            info!("rx audio pipeline: {}", audio_pipeline);
+            info!("rx audio pipeline: {}", pipeline_shape(audio_pipeline));
         }
 
         let started = Instant::now();
