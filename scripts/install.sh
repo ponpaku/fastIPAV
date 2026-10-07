@@ -357,7 +357,9 @@ for path_value in "${PREFIX}" "${CONFIG_DIR}" "${SYSTEMD_DIR}"; do
   case "/${path_value#/}/" in
     *"/../"*|*"/./"*) fail "install paths must not contain '.' or '..' components: ${path_value}" ;;
   esac
-  printf '%s\n' "${path_value}" | grep -Eq '^/[A-Za-z0-9._/-]+
+  printf '%s\n' "${path_value}" | grep -Eq '^/[A-Za-z0-9._/-]+$' ||
+    fail "install paths may only contain letters, numbers, '.', '_', '-', and '/': ${path_value}"
+done
 
 case "${ENABLE_SERVICE}" in
   ""|tx|rx|both) ;;
