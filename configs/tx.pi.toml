@@ -32,7 +32,7 @@ height = 1080
 fps = 30
 bitrate_kbps = 8000
 gop = 30
-encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast"
+encoder_element = "auto"
 
 [audio]
 enabled = false
