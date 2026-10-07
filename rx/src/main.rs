@@ -317,9 +317,33 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                         _ => {}
                     }
 
-                    // A receiver may start before one or both transmitter branches.
-                    // No ingress keeps health unready without restart. Once RTP is
-                    // arriving, distinguish decoder stalls from downstream render stalls.
+                    // A receiver may start before its transmitter, so no ingress at
+                    // all keeps health unready without restart. Once either enabled
+                    // media branch is arriving, the other branch should appear within
+                    // the configured timeout or the joined sockets/pipeline are rebuilt.
+                    if config.audio.enabled {
+                        if first_video_ingress.is_none()
+                            && first_audio_ingress
+                                .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
+                        {
+                            break format!(
+                                "audio RTP is arriving but no video RTP arrived within {} ms",
+                                config.recovery.media_timeout_ms
+                            );
+                        }
+                        if first_audio_ingress.is_none()
+                            && first_video_ingress
+                                .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
+                        {
+                            break format!(
+                                "video RTP is arriving but no audio RTP arrived within {} ms",
+                                config.recovery.media_timeout_ms
+                            );
+                        }
+                    }
+
+                    // Once video RTP is arriving, distinguish decoder stalls from
+                    // downstream render stalls.
                     if !video_codec_ready
                         && first_video_ingress
                             .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
