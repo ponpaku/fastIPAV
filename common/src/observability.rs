@@ -6,10 +6,13 @@ use tokio::{net::TcpListener, task::JoinHandle};
 use tracing::{error, info};
 
 pub fn init_tracing(verbose: bool) {
-    let level = if verbose { "debug" } else { "info" };
-    let fallback = format!("{},hyper=warn,axum=warn", level);
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(fallback));
+    let fallback = "info,hyper=warn,axum=warn";
+    let filter = if verbose {
+        tracing_subscriber::EnvFilter::new("debug,hyper=warn,axum=warn")
+    } else {
+        tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(fallback))
+    };
     let subscriber = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)
