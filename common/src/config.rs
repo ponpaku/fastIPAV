@@ -468,8 +468,9 @@ impl TxConfig {
         if self.video.gop > i32::MAX as u32 {
             bail!("video.gop is too large for V4L2 encoder controls");
         }
-        let keyframe_interval_ms =
-            (self.video.gop as u64).saturating_mul(1_000).div_ceil(self.video.fps as u64);
+        let keyframe_interval_ms = (self.video.gop as u64)
+            .saturating_mul(1_000)
+            .div_ceil(self.video.fps as u64);
         if keyframe_interval_ms >= self.recovery.media_timeout_ms {
             bail!(
                 "video.gop implies a keyframe interval of about {} ms, which must be smaller than recovery.media_timeout_ms ({} ms) for packet-loss recovery",
@@ -936,8 +937,7 @@ mod tests {
 
         let mut audio_config = RxConfig::default();
         audio_config.audio.enabled = true;
-        audio_config.audio.jitter_latency_ms =
-            audio_config.recovery.media_timeout_ms as u32;
+        audio_config.audio.jitter_latency_ms = audio_config.recovery.media_timeout_ms as u32;
         assert!(audio_config.validate().is_err());
     }
 
