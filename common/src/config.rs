@@ -15,6 +15,16 @@ pub enum PlatformProfile {
     RaspberryPi,
 }
 
+impl PlatformProfile {
+    pub fn resolve(&self) -> Self {
+        match self {
+            Self::Auto if running_on_raspberry_pi() => Self::RaspberryPi,
+            Self::Auto => Self::LinuxPc,
+            other => other.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RendererKind {
@@ -27,9 +37,9 @@ pub enum RendererKind {
 impl RendererKind {
     pub fn resolve(&self, profile: &PlatformProfile) -> Self {
         match self {
-            Self::Auto => match profile {
+            Self::Auto => match profile.resolve() {
                 PlatformProfile::RaspberryPi => Self::KmsDrm,
-                _ => Self::Sdl,
+                PlatformProfile::LinuxPc | PlatformProfile::Auto => Self::Sdl,
             },
             other => other.clone(),
         }
@@ -597,6 +607,13 @@ where
         .with_context(|| format!("failed to read config file {}", path.display()))?;
     toml::from_str(&contents)
         .with_context(|| format!("failed to parse TOML from {}", path.display()))
+}
+
+fn running_on_raspberry_pi() -> bool {
+    fs::read("/proc/device-tree/model")
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .is_some_and(|model| model.trim_end_matches('\0').contains("Raspberry Pi"))
 }
 
 fn default_tx_node_name() -> String {
