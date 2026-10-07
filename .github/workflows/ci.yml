@@ -129,6 +129,7 @@ jobs:
           install_root="$(mktemp -d)"
           bash scripts/install.sh \
             --version "${release_tag}" \
+            --local-dist \
             --prefix "${install_root}/usr/local" \
             --config-dir "${install_root}/etc/avoverip" \
             --systemd-dir "${install_root}/systemd"
