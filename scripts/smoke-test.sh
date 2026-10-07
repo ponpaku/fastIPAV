@@ -154,6 +154,36 @@ kill -TERM "${retry_pid}"
 wait "${retry_pid}"
 retry_pid=""
 
+ENCODER_DROP_CONFIG="${TMP_DIR}/tx.drop-encoder.toml"
+sed \
+  -e 's/port = 18081/port = 18085/' \
+  -e 's/media_timeout_ms = 5000/media_timeout_ms = 1200/' \
+  -e 's#encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast"#encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast ! valve drop=true"#' \
+  "${CONFIG_DIR}/tx.smoketest.toml" >"${ENCODER_DROP_CONFIG}"
+
+"${TX_BIN}" --config "${ENCODER_DROP_CONFIG}" >"${TMP_DIR}/tx-drop-encoder.log" 2>&1 &
+tx_pid=$!
+wait_for_unhealthy "tx-encoder-drop" "http://127.0.0.1:18085/healthz" "${tx_pid}"
+TX_DROP_STATS="$(curl -fsS "http://127.0.0.1:18085/stats")"
+TX_DROP_RESTARTS_BEFORE="$(json_u64_field "${TX_DROP_STATS}" pipeline_restarts)"
+[ -n "${TX_DROP_RESTARTS_BEFORE}" ] || {
+  printf '[smoke-test] could not read tx encoder-drop restart count\n' >&2
+  exit 1
+}
+wait_for_restart_increment \
+  "tx-encoder-drop" \
+  "http://127.0.0.1:18085/stats" \
+  "${tx_pid}" \
+  "${TX_DROP_RESTARTS_BEFORE}"
+TX_DROP_STATS="$(curl -fsS "http://127.0.0.1:18085/stats")"
+printf '%s' "${TX_DROP_STATS}" | grep -q 'encoder produced no H264' || {
+  printf '[smoke-test] tx did not distinguish encoder output loss from source loss\n' >&2
+  exit 1
+}
+kill -TERM "${tx_pid}"
+wait "${tx_pid}"
+tx_pid=""
+
 "${RX_BIN}" --config "${CONFIG_DIR}/rx.smoketest.toml" >"${RX_LOG}" 2>&1 &
 rx_pid=$!
 
