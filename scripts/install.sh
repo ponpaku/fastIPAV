@@ -179,6 +179,15 @@ install_deps() {
     alsa-utils
 }
 
+ensure_service_groups() {
+  need_cmd getent
+  local group
+  for group in video audio; do
+    getent group "${group}" >/dev/null 2>&1 ||
+      fail "required system group is missing: ${group}"
+  done
+}
+
 ensure_service_user() {
   need_cmd id
   if id -u avoverip >/dev/null 2>&1; then
@@ -451,6 +460,7 @@ as_root "${PACKAGE_DIR}/bin/rx" --config "${RX_CONFIG_TO_CHECK}" --check-config 
   || fail "rx config is not compatible with ${VERSION}: ${RX_CONFIG_TO_CHECK}"
 
 if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
+  ensure_service_groups
   ensure_service_user
 fi
 
