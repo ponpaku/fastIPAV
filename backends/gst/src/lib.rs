@@ -714,6 +714,19 @@ mod tests {
     }
 
     #[test]
+    fn default_audio_branches_parse() {
+        let mut tx = TxConfig::default();
+        tx.audio.enabled = true;
+        GstServicePipeline::for_tx(&tx, Some("lo"))
+            .unwrap_or_else(|err| panic!("default TX audio pipeline did not parse: {err:#}"));
+
+        let mut rx = RxConfig::default();
+        rx.audio.enabled = true;
+        GstServicePipeline::for_rx(&rx, Some("lo"))
+            .unwrap_or_else(|err| panic!("default RX audio pipeline did not parse: {err:#}"));
+    }
+
+    #[test]
     fn shipped_pipeline_configs_parse() {
         let config_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs");
 
