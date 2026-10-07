@@ -550,6 +550,13 @@ impl RxConfig {
                 self.recovery.media_timeout_ms
             );
         }
+        if matches!(
+            self.video.renderer.resolve(&self.platform.profile),
+            RendererKind::KmsDrm
+        ) && !self.video.fullscreen
+        {
+            bail!("video.fullscreen=false is not supported with the KMS/DRM renderer");
+        }
         if self.video.max_lateness_ms < -1 {
             bail!("video.max_lateness_ms must be -1 (unlimited) or a non-negative value");
         }
@@ -926,6 +933,15 @@ mod tests {
         config.video.fps = 30;
         config.video.gop = 150;
         config.recovery.media_timeout_ms = 5_000;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_windowed_kms_renderer() {
+        let mut config = RxConfig::default();
+        config.platform.profile = PlatformProfile::RaspberryPi;
+        config.video.renderer = RendererKind::KmsDrm;
+        config.video.fullscreen = false;
         assert!(config.validate().is_err());
     }
 
