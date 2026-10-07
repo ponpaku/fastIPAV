@@ -41,4 +41,4 @@ sample_rate = 48000
 channels = 2
 buffer_time_us = 20000
 latency_time_us = 5000
-use_driver_timestamps = true
+use_driver_timestamps = false
