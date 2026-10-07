@@ -53,7 +53,6 @@ sudo apt-get install -y \
   ca-certificates \
   git \
   tar \
-  libasound2 \
   gstreamer1.0-tools \
   gstreamer1.0-plugins-base \
   gstreamer1.0-plugins-good \
