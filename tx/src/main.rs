@@ -371,7 +371,8 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         if auto_encoder
             && uses_v4l2_encoder
             && !video_ready
-            && restart_reason.starts_with("no video buffers received")
+            && (restart_reason.starts_with("no video buffers received")
+                || restart_reason.to_ascii_lowercase().contains("error"))
         {
             force_software_encoder = true;
             state
