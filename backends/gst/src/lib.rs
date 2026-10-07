@@ -163,9 +163,32 @@ impl GstServicePipeline {
             Some(audio_egress_tx)
         };
 
-        self.pipeline
-            .set_state(gst::State::Playing)
-            .map_err(|err| anyhow!("failed to start {} pipeline: {:?}", self.name, err))?;
+        if let Err(err) = self.pipeline.set_state(gst::State::Playing) {
+            let mut detail = None;
+            while let Some(message) = bus.timed_pop(gst::ClockTime::ZERO) {
+                if let gst::MessageView::Error(error) = message.view() {
+                    detail = Some(format!(
+                        "error from {}: {}",
+                        source_name(&message),
+                        error.error()
+                    ));
+                    break;
+                }
+            }
+            if let Some(detail) = detail {
+                return Err(anyhow!(
+                    "failed to start {} pipeline: {:?}; {}",
+                    self.name,
+                    err,
+                    detail
+                ));
+            }
+            return Err(anyhow!(
+                "failed to start {} pipeline: {:?}",
+                self.name,
+                err
+            ));
+        }
 
         let stop_flag = Arc::clone(&self.stop_flag);
         let pipeline_name = self.name.to_string();
