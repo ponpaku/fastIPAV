@@ -526,6 +526,7 @@ fn rx_video_branch(
             "udpsrc address={group} port={port} auto-multicast=true mtu={mtu}{iface}{buffer_size} caps={caps} ",
             "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
             "! rtph264depay wait-for-keyframe=true ",
+            "! video/x-h264,stream-format=byte-stream,alignment=au ",
             "! h264parse ",
             "! {decoder} ",
             "! videoconvert ",
