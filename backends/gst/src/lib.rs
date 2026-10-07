@@ -13,6 +13,8 @@ use std::{
 };
 use tokio::sync::{mpsc, watch};
 
+const BUS_EVENT_CAPACITY: usize = 64;
+
 #[derive(Debug, Clone)]
 pub enum PipelineEvent {
     Info(String),
@@ -57,10 +59,13 @@ pub struct MediaHeartbeat {
 }
 
 pub struct PipelineEvents {
-    pub bus: mpsc::UnboundedReceiver<PipelineEvent>,
+    pub bus: mpsc::Receiver<PipelineEvent>,
+    pub terminal: watch::Receiver<Option<PipelineEvent>>,
     pub video: watch::Receiver<MediaHeartbeat>,
     pub audio: watch::Receiver<MediaHeartbeat>,
     pub qos: watch::Receiver<u64>,
+    _bus_guard: mpsc::Sender<PipelineEvent>,
+    _terminal_guard: watch::Sender<Option<PipelineEvent>>,
     _audio_guard: Option<watch::Sender<MediaHeartbeat>>,
     _qos_guard: watch::Sender<u64>,
 }
@@ -96,7 +101,10 @@ impl GstServicePipeline {
             .pipeline
             .bus()
             .ok_or_else(|| anyhow!("{} pipeline bus is not available", self.name))?;
-        let (bus_tx, bus_rx) = mpsc::unbounded_channel();
+        let (bus_tx, bus_rx) = mpsc::channel(BUS_EVENT_CAPACITY);
+        let bus_guard = bus_tx.clone();
+        let (terminal_tx, terminal_rx) = watch::channel(None::<PipelineEvent>);
+        let terminal_guard = terminal_tx.clone();
         let initial_heartbeat = MediaHeartbeat {
             observed_at: None,
             total: 0,
@@ -195,12 +203,13 @@ impl GstServicePipeline {
                 };
 
                 if let Some(event) = event {
-                    let should_break = event.requires_restart();
-                    if bus_tx.send(event).is_err() {
+                    if event.requires_restart() {
+                        terminal_tx.send_replace(Some(event));
                         break;
                     }
-                    if should_break {
-                        break;
+                    match bus_tx.try_send(event) {
+                        Ok(()) | Err(mpsc::error::TrySendError::Full(_)) => {}
+                        Err(mpsc::error::TrySendError::Closed(_)) => break,
                     }
                 }
             }
@@ -208,9 +217,12 @@ impl GstServicePipeline {
         self.bus_thread = Some(bus_thread);
         Ok(PipelineEvents {
             bus: bus_rx,
+            terminal: terminal_rx,
             video: video_rx,
             audio: audio_rx,
             qos: qos_rx,
+            _bus_guard: bus_guard,
+            _terminal_guard: terminal_guard,
             _audio_guard: audio_guard,
             _qos_guard: qos_guard,
         })
