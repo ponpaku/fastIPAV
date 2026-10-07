@@ -177,7 +177,13 @@ jobs:
       - name: Verify packaged binaries on target userland
         run: |
           archive="$(find dist -maxdepth 1 -name '*.tar.gz' -print -quit)"
+          checksum="$(find dist -maxdepth 1 -name '*.sha256' -print -quit)"
           test -n "${archive}"
+          test -n "${checksum}"
+          (
+            cd dist
+            sha256sum -c "$(basename "${checksum}")"
+          )
           package_name="$(basename "${archive}" .tar.gz)"
           test -n "${package_name}"
           tar -xzf "${archive}" -C dist
