@@ -109,7 +109,6 @@ fn interface_is_physical(name: &str) -> bool {
     fs::metadata(format!("/sys/class/net/{}/device", name)).is_ok()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
