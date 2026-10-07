@@ -554,23 +554,25 @@ if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
     fail "service user avoverip cannot read ${CONFIG_DIR}/rx.toml"
 fi
 
-log "installing binaries to ${PREFIX}/bin"
+log "staging binaries in ${PREFIX}/bin"
 TX_STAGED="${PREFIX}/bin/.tx.fastipav.new.${BASHPID}"
 RX_STAGED="${PREFIX}/bin/.rx.fastipav.new.${BASHPID}"
 as_root install -m 0755 "${PACKAGE_DIR}/bin/tx" "${TX_STAGED}"
 as_root install -m 0755 "${PACKAGE_DIR}/bin/rx" "${RX_STAGED}"
-as_root mv -f "${TX_STAGED}" "${PREFIX}/bin/tx"
-as_root mv -f "${RX_STAGED}" "${PREFIX}/bin/rx"
 
 if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
-  log "validating installed binaries and configs as service user avoverip"
-  as_root runuser -u avoverip -- "${PREFIX}/bin/tx" \
+  log "validating staged binaries and configs as service user avoverip"
+  as_root runuser -u avoverip -- "${TX_STAGED}" \
     --config "${CONFIG_DIR}/tx.toml" --check-config >/dev/null ||
-    fail "installed tx binary/config is not usable by service user avoverip"
-  as_root runuser -u avoverip -- "${PREFIX}/bin/rx" \
+    fail "staged tx binary/config is not usable by service user avoverip"
+  as_root runuser -u avoverip -- "${RX_STAGED}" \
     --config "${CONFIG_DIR}/rx.toml" --check-config >/dev/null ||
-    fail "installed rx binary/config is not usable by service user avoverip"
+    fail "staged rx binary/config is not usable by service user avoverip"
 fi
+
+log "activating binaries in ${PREFIX}/bin"
+as_root mv -f "${TX_STAGED}" "${PREFIX}/bin/tx"
+as_root mv -f "${RX_STAGED}" "${PREFIX}/bin/rx"
 
 log "installing shared assets to ${SHARE_DIR}"
 as_root install -d "${SHARE_DIR}/configs" "${SHARE_DIR}/systemd"
