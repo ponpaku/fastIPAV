@@ -394,7 +394,7 @@ for role in tx rx; do
   as_root install -m 0644 "${unit_rendered}" "${SYSTEMD_DIR}/avoverip-${role}.service"
 done
 
-if command -v systemctl >/dev/null 2>&1; then
+if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ] && command -v systemctl >/dev/null 2>&1; then
   as_root systemctl daemon-reload || true
 fi
 
