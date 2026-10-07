@@ -158,7 +158,7 @@ ENCODER_DROP_CONFIG="${TMP_DIR}/tx.drop-encoder.toml"
 sed \
   -e 's/port = 18081/port = 18085/' \
   -e 's/media_timeout_ms = 5000/media_timeout_ms = 1200/' \
-  -e 's#encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast"#encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast ! valve drop=true"#' \
+  -e 's#encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast"#encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast ! identity drop-probability=1.0"#' \
   "${CONFIG_DIR}/tx.smoketest.toml" >"${ENCODER_DROP_CONFIG}"
 
 "${TX_BIN}" --config "${ENCODER_DROP_CONFIG}" >"${TMP_DIR}/tx-drop-encoder.log" 2>&1 &
@@ -298,7 +298,7 @@ DROP_RX_CONFIG="${TMP_DIR}/rx.drop-video.toml"
 sed \
   -e 's/port = 18082/port = 18084/' \
   -e 's/media_timeout_ms = 5000/media_timeout_ms = 1200/' \
-  -e 's#decoder_element = "avdec_h264"#decoder_element = "avdec_h264 ! valve drop=true"#' \
+  -e 's#decoder_element = "avdec_h264"#decoder_element = "avdec_h264 ! identity drop-probability=1.0"#' \
   "${CONFIG_DIR}/rx.smoketest.toml" >"${DROP_RX_CONFIG}"
 
 "${RX_BIN}" --config "${DROP_RX_CONFIG}" >"${TMP_DIR}/rx-drop-video.log" 2>&1 &
