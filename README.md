@@ -101,7 +101,7 @@ Linux desktopでWayland/X11へ表示するRXは、system serviceではdisplay se
 - 実運用設定: `/etc/avoverip/tx.toml` `/etc/avoverip/rx.toml`
 - systemd unit: `/etc/systemd/system/avoverip-tx.service` `/etc/systemd/system/avoverip-rx.service`
 
-既存の `/etc/avoverip/tx.toml` と `/etc/avoverip/rx.toml` は上書きしない。
+既存の `/etc/avoverip/tx.toml` と `/etc/avoverip/rx.toml` は上書きしない。upgrade時は新binaryで既存config/pipelineを事前検証し、既にactiveなsystemd serviceは新binaryへ自動restartする。inactiveなserviceは勝手にenableしない。
 
 ## Raspberry Pi のセットアップ
 
@@ -114,14 +114,17 @@ Raspberry Pi は `Raspberry Pi OS Bookworm 64bit` を前提にする。
 gst-inspect-1.0 kmssink
 gst-inspect-1.0 avdec_h264
 ls -l /dev/video*
+v4l2-ctl --device /dev/video0 --list-formats-ext
 ```
 
 補足:
 
 - `scripts/install.sh` は Raspberry Pi を検出すると `configs/tx.pi.toml` と `configs/rx.pi.toml` を既定として `/etc/avoverip/` に配置する
 - Raspberry Pi 5 はH.264 hardware codecを持たないため `avdec_h264` などのsoftware decoderを優先する。旧Piでは利用可能なら `v4l2h264dec` を優先する
-- Pi送信の`encoder_element = "auto"`は、Pi 4以前で利用可能なら`v4l2h264enc`、Pi 5系では`x264enc`を選ぶ
-- UVC キャプチャを使う場合は `video.device` を必要に応じて変更する
+- Pi送信の`encoder_element = "auto"`は、Pi 4以前で利用可能なら`v4l2h264enc`、Pi 5系では`x264enc`を選ぶ。V4L2 hardware codecが起動できない、または初回映像を生成できない場合はsoftware codecへfallbackする
+- Pi 4以前のV4L2 H.264 encoderでは1080p30向けにH.264 level 4を明示する
+- UVC キャプチャを使う場合は `video.device` を必要に応じて変更する。複数video deviceがある環境では `/dev/v4l/by-id/...` の安定したsymlinkを推奨する
+- `source_caps` が要求する解像度/fps/formatをcapture deviceが実際に提供するか、`v4l2-ctl --list-formats-ext` で確認する
 
 ## Linux PC のセットアップ
 
