@@ -224,14 +224,21 @@ jobs:
             is_draft="$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq '.isDraft')"
             if [ "${is_draft}" != "true" ]; then
               published_assets="$(gh release view "${GITHUB_REF_NAME}" --json assets --jq '.assets[].name')"
+              verify_dir="$(mktemp -d)"
+              trap 'rm -rf "${verify_dir}"' EXIT
               for asset in dist/*; do
                 asset_name="$(basename "${asset}")"
                 printf '%s\n' "${published_assets}" | grep -Fx -- "${asset_name}" >/dev/null || {
                   echo "published release ${GITHUB_REF_NAME} is missing expected asset ${asset_name}" >&2
                   exit 1
                 }
+                gh release download "${GITHUB_REF_NAME}" -p "${asset_name}" -D "${verify_dir}"
+                cmp -s "${asset}" "${verify_dir}/${asset_name}" || {
+                  echo "published immutable asset ${asset_name} does not match the rebuilt artifact" >&2
+                  exit 1
+                }
               done
-              echo "release ${GITHUB_REF_NAME} is already published with all expected immutable assets"
+              echo "release ${GITHUB_REF_NAME} is already published with identical immutable assets"
               exit 0
             fi
           else
