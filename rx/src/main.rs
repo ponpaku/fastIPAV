@@ -323,30 +323,11 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                             _ => {}
                         }
 
-                        // A receiver may start before its transmitter, so no ingress at
-                        // all keeps health unready without restart. Once either enabled
-                        // media branch is arriving, the other branch should appear within
-                        // the configured timeout or the joined sockets/pipeline are rebuilt.
-                        if config.audio.enabled {
-                            if first_video_ingress.is_none()
-                                && first_audio_ingress
-                                    .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
-                            {
-                                break format!(
-                                    "audio RTP is arriving but no video RTP arrived within {} ms",
-                                    config.recovery.media_timeout_ms
-                                );
-                            }
-                            if first_audio_ingress.is_none()
-                                && first_video_ingress
-                                    .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
-                            {
-                                break format!(
-                                    "video RTP is arriving but no audio RTP arrived within {} ms",
-                                    config.recovery.media_timeout_ms
-                                );
-                            }
-                        }
+                        // A receiver may start before its transmitter, and one enabled
+                        // branch may be absent because of a TX/RX configuration mismatch.
+                        // Missing ingress stays unhealthy without a restart loop; only an
+                        // ingress branch that arrived and then fails downstream is treated
+                        // as a recoverable pipeline failure.
 
                         // Once video RTP is arriving, distinguish decoder stalls from
                         // downstream render stalls.
