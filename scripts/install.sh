@@ -199,7 +199,15 @@ ensure_service_groups() {
 }
 
 ensure_service_user() {
+  need_cmd getent
   need_cmd id
+
+  if ! getent group avoverip >/dev/null 2>&1; then
+    need_cmd groupadd
+    log "creating system group avoverip"
+    as_root groupadd --system avoverip
+  fi
+
   if id -u avoverip >/dev/null 2>&1; then
     local existing_uid
     existing_uid="$(id -u avoverip)"
@@ -213,6 +221,7 @@ ensure_service_user() {
   log "creating system user avoverip"
   as_root useradd \
     --system \
+    --gid avoverip \
     --no-create-home \
     --home-dir /nonexistent \
     --shell /usr/sbin/nologin \
@@ -536,10 +545,10 @@ else
 fi
 
 if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
-  # The units run as User=avoverip. Config files are not secret-bearing and
-  # must remain readable after an upgrade even if an older install left them
-  # root-only (for example mode 0600).
-  as_root chmod a+r "${CONFIG_DIR}/tx.toml" "${CONFIG_DIR}/rx.toml"
+  # Keep service configs readable by the dedicated daemon without exposing
+  # custom pipeline fragments or embedded URIs to every local user.
+  as_root chown root:avoverip "${CONFIG_DIR}/tx.toml" "${CONFIG_DIR}/rx.toml"
+  as_root chmod 0640 "${CONFIG_DIR}/tx.toml" "${CONFIG_DIR}/rx.toml"
 fi
 
 PREFIX_SED="$(escape_sed_replacement "${PREFIX}")"
