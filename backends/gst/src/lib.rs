@@ -782,7 +782,6 @@ enum LinuxSink {
     Sdl,
     Wayland,
     XImage,
-    AutoVideo,
 }
 
 fn render_linux_sink(
@@ -814,9 +813,6 @@ fn render_linux_sink(
             "ximagesink sync={} qos=true max-lateness={}",
             sync_value, max_lateness_ns
         ),
-        // autovideosink is a GstBin, not a GstBaseSink, so it does not expose
-        // sync/qos/max-lateness itself. Its selected child sink owns those.
-        LinuxSink::AutoVideo => "autovideosink".to_string(),
     }
 }
 
@@ -833,9 +829,26 @@ fn preferred_linux_sink() -> LinuxSink {
     if has_x11 && has_element("ximagesink") {
         return LinuxSink::XImage;
     }
-    // Do not silently fall back to fakesink here. A receiver that cannot
-    // render must fail visibly rather than report healthy while discarding video.
-    LinuxSink::AutoVideo
+
+    // Never use autovideosink here: GstAutoDetect deliberately installs a
+    // fake sink when no usable display sink exists, which would make media
+    // heartbeats look healthy while no picture is actually rendered.
+    //
+    // Prefer an installed explicit sink even without a detected session so
+    // its READY/PLAYING transition fails visibly if the display is unavailable.
+    if has_element("sdlvideosink") {
+        return LinuxSink::Sdl;
+    }
+    if has_element("waylandsink") {
+        return LinuxSink::Wayland;
+    }
+    if has_element("ximagesink") {
+        return LinuxSink::XImage;
+    }
+
+    // Returning SDL here intentionally makes pipeline parsing fail when no
+    // supported explicit video sink plugin is installed.
+    LinuxSink::Sdl
 }
 
 fn has_element(name: &str) -> bool {
@@ -944,7 +957,6 @@ mod tests {
             (LinuxSink::Wayland, "waylandsink"),
             (LinuxSink::Sdl, "sdlvideosink"),
             (LinuxSink::XImage, "ximagesink"),
-            (LinuxSink::AutoVideo, "autovideosink"),
         ];
 
         for (sink, factory) in candidates {
