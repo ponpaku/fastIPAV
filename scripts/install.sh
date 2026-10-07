@@ -179,6 +179,16 @@ install_deps() {
     alsa-utils
 }
 
+ensure_service_user() {
+  if id -u avoverip >/dev/null 2>&1; then
+    return
+  fi
+
+  need_cmd useradd
+  log "creating system user avoverip"
+  as_root useradd     --system     --user-group     --no-create-home     --home-dir /nonexistent     --shell /usr/sbin/nologin     avoverip
+}
+
 enable_and_restart_service() {
   local service="$1"
   as_root systemctl enable "${service}"
@@ -455,6 +465,9 @@ PREFIX_SED="$(escape_sed_replacement "${PREFIX}")"
 CONFIG_DIR_SED="$(escape_sed_replacement "${CONFIG_DIR}")"
 
 log "installing systemd unit files to ${SYSTEMD_DIR}"
+if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
+  ensure_service_user
+fi
 as_root install -d "${SYSTEMD_DIR}"
 for role in tx rx; do
   unit_source="${PACKAGE_DIR}/systemd/avoverip-${role}.service"
