@@ -29,6 +29,8 @@ struct Cli {
     http_port: Option<u16>,
     #[arg(long)]
     verbose: bool,
+    #[arg(long)]
+    check_config: bool,
 }
 
 #[tokio::main]
@@ -58,6 +60,10 @@ async fn main() -> Result<()> {
         config.http.port = http_port;
     }
     config.validate()?;
+    if cli.check_config {
+        println!("tx config OK: {}", config_path);
+        return Ok(());
+    }
 
     let state = SharedServiceState::new("tx", &config.node_name, "gstreamer");
     state
