@@ -288,6 +288,8 @@ cargo build
 
 - `capture-to-display` は現状、設定値ベースの初期推定を返す
 - `estimated_av_sync_ms` / `estimated_audio_offset_ms` は設定したvideo/audio jitter buffer差に基づく推定値。video/audioは独立RTPストリームで、RTCP/rtpbinによるsender-clock同期はまだ実装していないため、実測A/V同期値としては扱わない
+- RXは送信元/SSRCを選別しない。複数TXを同時運用する場合はstreamごとにmulticast groupまたはRTP portを分け、同じgroup+portへ複数送信しない
+- RTP/UDP multicastには再送/FEC/暗号化を実装していない。packet loss耐性より低遅延を優先する構成で、信頼できるLANを前提とする
 - 実機の遅延検証と UVC 入力確認は別途必要
 - Raspberry Pi / Linux PC 向けの hardware codec 最適化は今後の調整余地がある
 - systemdのRXをLinux desktopで使う場合、display sessionの環境や権限は環境依存。KMS/DRMを使うRaspberry Piとは条件が異なる
