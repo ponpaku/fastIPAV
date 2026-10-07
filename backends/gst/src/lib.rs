@@ -183,11 +183,7 @@ impl GstServicePipeline {
                     detail
                 ));
             }
-            return Err(anyhow!(
-                "failed to start {} pipeline: {:?}",
-                self.name,
-                err
-            ));
+            return Err(anyhow!("failed to start {} pipeline: {:?}", self.name, err));
         }
 
         let stop_flag = Arc::clone(&self.stop_flag);
