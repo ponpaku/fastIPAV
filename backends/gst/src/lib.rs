@@ -21,6 +21,7 @@ pub enum PipelineEvent {
     Eos,
     ClockLost,
     Latency,
+    Qos(String),
     AudioUnderrun,
 }
 
@@ -33,6 +34,7 @@ impl PipelineEvent {
             Self::Eos => "pipeline reached EOS".to_string(),
             Self::ClockLost => "pipeline lost its clock".to_string(),
             Self::Latency => "pipeline posted latency recalculation".to_string(),
+            Self::Qos(source) => format!("pipeline QoS event from {source}"),
             Self::AudioUnderrun => "audio underrun detected".to_string(),
         }
     }
@@ -165,6 +167,9 @@ impl GstServicePipeline {
                         } else {
                             Some(PipelineEvent::Latency)
                         }
+                    }
+                    gst::MessageView::Qos(..) => {
+                        Some(PipelineEvent::Qos(source_name(&message)))
                     }
                     gst::MessageView::Element(element) => {
                         if let Some(structure) = element.structure() {
