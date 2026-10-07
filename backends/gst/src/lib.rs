@@ -688,12 +688,25 @@ fn has_element(name: &str) -> bool {
 }
 
 fn is_raspberry_pi_5_family() -> bool {
+    if fs::read("/proc/device-tree/compatible")
+        .ok()
+        .is_some_and(|bytes| {
+            bytes
+                .split(|byte| *byte == 0)
+                .any(|entry| entry == b"brcm,bcm2712")
+        })
+    {
+        return true;
+    }
+
     fs::read("/proc/device-tree/model")
         .ok()
         .and_then(|bytes| String::from_utf8(bytes).ok())
         .is_some_and(|model| {
             let model = model.trim_end_matches('\0');
-            model.contains("Raspberry Pi 5") || model.contains("Compute Module 5")
+            model.contains("Raspberry Pi 5")
+                || model.contains("Compute Module 5")
+                || model.contains("Raspberry Pi 500")
         })
 }
 
