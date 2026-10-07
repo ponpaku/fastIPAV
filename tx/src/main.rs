@@ -11,7 +11,11 @@ use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 #[derive(Debug, Parser)]
-#[command(name = "tx", about = "Low-latency AV-over-IP transmitter")]
+#[command(
+    name = "tx",
+    version,
+    about = "Low-latency AV-over-IP transmitter"
+)]
 struct Cli {
     #[arg(short, long, default_value = "configs/tx.default.toml")]
     config: String,
