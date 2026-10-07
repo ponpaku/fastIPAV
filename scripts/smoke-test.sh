@@ -87,16 +87,16 @@ wait_for_unhealthy() {
   return 1
 }
 
-command -v cargo >/dev/null 2>&1 || {
-  printf '[smoke-test] cargo is required\n' >&2
-  exit 1
-}
 command -v curl >/dev/null 2>&1 || {
   printf '[smoke-test] curl is required\n' >&2
   exit 1
 }
 
 if [ ! -x "${TX_BIN}" ] || [ ! -x "${RX_BIN}" ]; then
+  command -v cargo >/dev/null 2>&1 || {
+    printf '[smoke-test] cargo is required when test binaries are not already available\n' >&2
+    exit 1
+  }
   printf '[smoke-test] building debug binaries\n'
   cargo build --workspace --locked
 fi
