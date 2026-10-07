@@ -170,8 +170,7 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         };
         state.set_interface(interface_name.clone()).await;
 
-        let pipeline_result =
-            GstServicePipeline::for_rx(&cycle_config, interface_name.as_deref());
+        let pipeline_result = GstServicePipeline::for_rx(&cycle_config, interface_name.as_deref());
         let mut pipeline = match pipeline_result {
             Ok(pipeline) => pipeline,
             Err(err) => {
