@@ -181,11 +181,12 @@ jobs:
 
           "${package_dir}/bin/tx" --version
           "${package_dir}/bin/rx" --version
-          "${package_dir}/bin/tx" --config configs/tx.default.toml --check-config
-          "${package_dir}/bin/rx" --config configs/rx.default.toml --check-config
+          "${package_dir}/bin/tx" --config "${package_dir}/configs/tx.default.toml" --check-config
+          "${package_dir}/bin/rx" --config "${package_dir}/configs/rx.default.toml" --check-config
 
           TX_BIN="${package_dir}/bin/tx" \
           RX_BIN="${package_dir}/bin/rx" \
+          CONFIG_DIR="${package_dir}/configs" \
             bash scripts/smoke-test.sh
 
   publish:
