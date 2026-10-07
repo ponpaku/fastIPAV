@@ -169,19 +169,12 @@ impl GstServicePipeline {
                     continue;
                 };
                 let event = match message.view() {
-                    gst::MessageView::Error(err) => {
-                        let debug = err
-                            .debug()
-                            .map(|value| value.to_string())
-                            .unwrap_or_else(|| "no debug details".to_string());
-                        Some(PipelineEvent::Error(format!(
-                            "{} error from {}: {} ({})",
-                            pipeline_name,
-                            source_name(&message),
-                            err.error(),
-                            debug
-                        )))
-                    }
+                    gst::MessageView::Error(err) => Some(PipelineEvent::Error(format!(
+                        "{} error from {}: {}",
+                        pipeline_name,
+                        source_name(&message),
+                        err.error()
+                    ))),
                     gst::MessageView::Warning(warn) => {
                         let source = source_name(&message);
                         let text = format!(
