@@ -324,8 +324,7 @@ fn build_tx_descriptions(config: &TxConfig, interface_name: Option<&str>) -> Pip
 }
 
 fn build_rx_descriptions(config: &RxConfig, interface_name: Option<&str>) -> PipelineDescriptions {
-    let (video, renderer_name) =
-        rx_video_branch(config, interface_name, &config.video.renderer);
+    let (video, renderer_name) = rx_video_branch(config, interface_name, &config.video.renderer);
     let audio = config
         .audio
         .enabled
@@ -627,9 +626,7 @@ fn render_sink(
                 render_linux_sink(preferred_linux_sink(), fullscreen, sync, max_lateness_ms)
             }
         },
-        RendererKind::Sdl => {
-            render_linux_sink(LinuxSink::Sdl, fullscreen, sync, max_lateness_ms)
-        }
+        RendererKind::Sdl => render_linux_sink(LinuxSink::Sdl, fullscreen, sync, max_lateness_ms),
         RendererKind::KmsDrm => format!(
             "kmssink sync={} force-modesetting={} qos=true max-lateness={}",
             sync_value,
