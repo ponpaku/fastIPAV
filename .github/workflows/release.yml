@@ -120,8 +120,68 @@ jobs:
             dist/*.sha256
           if-no-files-found: error
 
-  publish:
+  compatibility:
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            image: ubuntu:24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            image: debian:12
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Install runtime dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y \
+            ca-certificates \
+            curl \
+            tar \
+            gstreamer1.0-tools \
+            gstreamer1.0-alsa \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly \
+            gstreamer1.0-libav
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Download release package
+        uses: actions/download-artifact@v8
+        with:
+          name: fastipav-${{ matrix.arch }}
+          path: dist
+
+      - name: Verify packaged binaries on target userland
+        run: |
+          archive="$(find dist -maxdepth 1 -name '*.tar.gz' -print -quit)"
+          test -n "${archive}"
+          package_name="$(tar -tzf "${archive}" | head -n1 | cut -d/ -f1)"
+          test -n "${package_name}"
+          tar -xzf "${archive}" -C dist
+          package_dir="dist/${package_name}"
+
+          "${package_dir}/bin/tx" --version
+          "${package_dir}/bin/rx" --version
+          "${package_dir}/bin/tx" --config configs/tx.default.toml --check-config
+          "${package_dir}/bin/rx" --config configs/rx.default.toml --check-config
+
+          TX_BIN="${package_dir}/bin/tx" \
+          RX_BIN="${package_dir}/bin/rx" \
+            bash scripts/smoke-test.sh
+
+  publish:
+    needs: compatibility
     runs-on: ubuntu-24.04
     permissions:
       contents: write
