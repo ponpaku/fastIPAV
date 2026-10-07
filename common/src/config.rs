@@ -443,40 +443,42 @@ impl TxConfig {
         validate_media_timeout(self.recovery.media_timeout_ms, self.video.fps)?;
 
         let encoder = self.video.encoder_element.trim();
-        let encoder_requires_420 = encoder.is_empty()
+        let managed_encoder = encoder.is_empty()
             || encoder == "auto"
             || (!encoder.contains('!')
                 && encoder
                     .split_whitespace()
                     .next()
                     .is_some_and(|name| name == "x264enc"));
-        if encoder_requires_420
+        if managed_encoder
             && (!self.video.width.is_multiple_of(2) || !self.video.height.is_multiple_of(2))
         {
             bail!("video width and height must be even for automatic/x264 I420/NV12 encoding");
         }
 
-        if self.video.bitrate_kbps == 0 {
-            bail!("video.bitrate_kbps must be greater than zero");
-        }
-        if (self.video.bitrate_kbps as u64) * 1_000 > i32::MAX as u64 {
-            bail!("video.bitrate_kbps is too large for V4L2 bitrate controls");
-        }
-        if self.video.gop == 0 {
-            bail!("video.gop must be greater than zero");
-        }
-        if self.video.gop > i32::MAX as u32 {
-            bail!("video.gop is too large for V4L2 encoder controls");
-        }
-        let keyframe_interval_ms = (self.video.gop as u64)
-            .saturating_mul(1_000)
-            .div_ceil(self.video.fps as u64);
-        if keyframe_interval_ms >= self.recovery.media_timeout_ms {
-            bail!(
-                "video.gop implies a keyframe interval of about {} ms, which must be smaller than recovery.media_timeout_ms ({} ms) for packet-loss recovery",
-                keyframe_interval_ms,
-                self.recovery.media_timeout_ms
-            );
+        if managed_encoder {
+            if self.video.bitrate_kbps == 0 {
+                bail!("video.bitrate_kbps must be greater than zero for automatic/x264 encoding");
+            }
+            if (self.video.bitrate_kbps as u64) * 1_000 > i32::MAX as u64 {
+                bail!("video.bitrate_kbps is too large for automatic V4L2 bitrate controls");
+            }
+            if self.video.gop == 0 {
+                bail!("video.gop must be greater than zero for automatic/x264 encoding");
+            }
+            if self.video.gop > i32::MAX as u32 {
+                bail!("video.gop is too large for automatic V4L2 encoder controls");
+            }
+            let keyframe_interval_ms = (self.video.gop as u64)
+                .saturating_mul(1_000)
+                .div_ceil(self.video.fps as u64);
+            if keyframe_interval_ms >= self.recovery.media_timeout_ms {
+                bail!(
+                    "video.gop implies a keyframe interval of about {} ms, which must be smaller than recovery.media_timeout_ms ({} ms) for packet-loss recovery",
+                    keyframe_interval_ms,
+                    self.recovery.media_timeout_ms
+                );
+            }
         }
         if self.video.source_element.trim().is_empty() && self.video.device.trim().is_empty() {
             bail!("video.device must not be empty when video.source_element is not set");
@@ -955,6 +957,15 @@ mod tests {
         audio_config.audio.enabled = true;
         audio_config.audio.jitter_latency_ms = audio_config.recovery.media_timeout_ms as u32;
         assert!(audio_config.validate().is_err());
+    }
+
+    #[test]
+    fn custom_tx_encoder_does_not_require_managed_bitrate_or_gop() {
+        let mut config = TxConfig::default();
+        config.video.encoder_element = "customh264enc low-latency=true".to_string();
+        config.video.bitrate_kbps = 0;
+        config.video.gop = 0;
+        assert!(config.validate().is_ok());
     }
 
     #[test]
