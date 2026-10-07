@@ -362,7 +362,8 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
             "{source} ",
             "! {source_caps}{source_decoder} ",
             "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ",
-            "! videoconvert{encoder_input_caps} ",
+            "! videoconvert ",
+            "! video/x-raw,width={width},height={height},framerate={fps}/1{encoder_input_caps} ",
             "! {encoder} ",
             "! h264parse config-interval=-1 ",
             "! identity name=video_monitor silent=true ",
@@ -372,6 +373,9 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
         source = source,
         source_caps = source_caps,
         source_decoder = source_decoder,
+        width = config.video.width,
+        height = config.video.height,
+        fps = config.video.fps,
         encoder_input_caps = encoder_input_caps,
         encoder = encoder,
         payload_type = config.network.video_payload_type,
@@ -399,7 +403,7 @@ fn select_h264_encoder(config: &TxConfig) -> (String, &'static str) {
                     "v4l2h264enc extra-controls=\"controls,repeat_sequence_header=1,video_bitrate={},h264_i_frame_period={}\"",
                     bitrate_bps, config.video.gop
                 ),
-                " ! video/x-raw,format=NV12",
+                ",format=NV12",
             );
         }
 
@@ -408,7 +412,7 @@ fn select_h264_encoder(config: &TxConfig) -> (String, &'static str) {
                 "x264enc tune=zerolatency speed-preset=ultrafast bitrate={} key-int-max={} bframes=0 aud=true byte-stream=true",
                 config.video.bitrate_kbps, config.video.gop
             ),
-            " ! video/x-raw,format=I420",
+            ",format=I420",
         );
     }
 
@@ -425,7 +429,7 @@ fn select_h264_encoder(config: &TxConfig) -> (String, &'static str) {
                 "{} bitrate={} key-int-max={} bframes=0 aud=true byte-stream=true",
                 encoder, config.video.bitrate_kbps, config.video.gop
             ),
-            " ! video/x-raw,format=I420",
+            ",format=I420",
         )
     } else {
         // A custom encoder fragment is complete and may have different property
