@@ -32,7 +32,7 @@ decoder_element = "avdec_h264"
 renderer = "auto"
 fullscreen = false
 sync = true
-max_lateness_ms = 25
+max_lateness_ms = -1
 
 [audio]
 enabled = false
