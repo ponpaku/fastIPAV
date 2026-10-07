@@ -65,10 +65,14 @@ pub struct PipelineEvents {
     pub audio: watch::Receiver<MediaHeartbeat>,
     pub video_ingress: watch::Receiver<MediaHeartbeat>,
     pub audio_ingress: watch::Receiver<MediaHeartbeat>,
+    pub video_egress: watch::Receiver<MediaHeartbeat>,
+    pub audio_egress: watch::Receiver<MediaHeartbeat>,
     pub qos: watch::Receiver<u64>,
     _audio_guard: Option<watch::Sender<MediaHeartbeat>>,
     _video_ingress_guard: Option<watch::Sender<MediaHeartbeat>>,
     _audio_ingress_guard: Option<watch::Sender<MediaHeartbeat>>,
+    _video_egress_guard: Option<watch::Sender<MediaHeartbeat>>,
+    _audio_egress_guard: Option<watch::Sender<MediaHeartbeat>>,
 }
 
 pub struct GstServicePipeline {
@@ -112,6 +116,8 @@ impl GstServicePipeline {
         let (audio_tx, audio_rx) = watch::channel(initial_heartbeat);
         let (video_ingress_tx, video_ingress_rx) = watch::channel(initial_heartbeat);
         let (audio_ingress_tx, audio_ingress_rx) = watch::channel(initial_heartbeat);
+        let (video_egress_tx, video_egress_rx) = watch::channel(initial_heartbeat);
+        let (audio_egress_tx, audio_egress_rx) = watch::channel(initial_heartbeat);
         let (qos_tx, qos_rx) = watch::channel(0_u64);
         self.install_buffer_probe("video_monitor", video_tx)?;
         let audio_guard = if self.descriptions.audio.is_some() {
@@ -131,6 +137,18 @@ impl GstServicePipeline {
             None
         } else {
             Some(audio_ingress_tx)
+        };
+        let video_egress_guard = if self.pipeline.by_name("video_egress_monitor").is_some() {
+            self.install_buffer_probe("video_egress_monitor", video_egress_tx)?;
+            None
+        } else {
+            Some(video_egress_tx)
+        };
+        let audio_egress_guard = if self.pipeline.by_name("audio_egress_monitor").is_some() {
+            self.install_buffer_probe("audio_egress_monitor", audio_egress_tx)?;
+            None
+        } else {
+            Some(audio_egress_tx)
         };
 
         self.pipeline
@@ -238,10 +256,14 @@ impl GstServicePipeline {
             audio: audio_rx,
             video_ingress: video_ingress_rx,
             audio_ingress: audio_ingress_rx,
+            video_egress: video_egress_rx,
+            audio_egress: audio_egress_rx,
             qos: qos_rx,
             _audio_guard: audio_guard,
             _video_ingress_guard: video_ingress_guard,
             _audio_ingress_guard: audio_ingress_guard,
+            _video_egress_guard: video_egress_guard,
+            _audio_egress_guard: audio_egress_guard,
         })
     }
 
@@ -398,6 +420,7 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
             "! video/x-h264,stream-format=byte-stream,alignment=au ",
             "! identity name=video_monitor silent=true ",
             "! rtph264pay pt={payload_type} config-interval=1 mtu={mtu} ",
+            "! identity name=video_egress_monitor silent=true ",
             "! udpsink host={group} port={port} auto-multicast=true ttl-mc={ttl} sync=false async=false{iface}"
         ),
         source = source,
@@ -520,6 +543,7 @@ fn tx_audio_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
             "! audio/x-raw,format=S16BE,layout=interleaved,rate={sample_rate},channels={channels} ",
             "! identity name=audio_monitor silent=true ",
             "! rtpL16pay pt={payload_type} mtu={mtu} ",
+            "! identity name=audio_egress_monitor silent=true ",
             "! udpsink host={group} port={port} auto-multicast=true ttl-mc={ttl} sync=false async=false{iface}"
         ),
         source = source,
