@@ -142,7 +142,7 @@ gst-inspect-1.0 waylandsink
 
 補足:
 
-- desktop rendererは表示sessionに応じて `waylandsink` → `sdlvideosink` → `ximagesink` を選び、適合する明示sinkが無い場合のみ `autovideosink` を使う
+- `renderer = "auto"` はdisplay sessionに応じて `waylandsink` → `sdlvideosink` → `ximagesink` を選び、適合するsinkが無い場合のみ `autovideosink` を使う。明示 `renderer = "sdl"` は `sdlvideosink` を固定指定する
 - UVC 入力が見えているかは `ls -l /dev/video*` で確認する
 - 音声入出力は `arecord -l` `aplay -l` で確認する
 - TX audioは既定でALSA driver timestampではなくpipeline clockを使い、videoの`do-timestamp=true`と同じclock domainへ寄せる
@@ -225,7 +225,7 @@ bash scripts/smoke-test.sh
 
 このテストは MJPEG 入力相当の映像と synthetic audio を生成し、TX の H.264 encode / RTP-L16 packetize 後と RX の H.264 decode / L16 depay 後の双方で実際に media buffer が通過したことを確認する。単に pipeline が `Playing` になっただけでは成功扱いしない。
 
-`/healthz` は media がreadyになるまで HTTP 503 を返し、ready後はHTTP 200と `ok=true` を返す。audio無効時はvideo、audio有効時はvideo/audio双方の実buffer到達がready条件になる。mediaが一定時間停止した場合はpipelineを再起動する。
+`/healthz` は media がreadyになるまで HTTP 503 を返し、ready後はHTTP 200と `ok=true` を返す。audio無効時はvideo、audio有効時はvideo/audio双方の実buffer到達がready条件になる。mediaが一定時間停止した場合はpipelineを再起動する。RXはRTP ingressとdecode後bufferを別々に監視するため、送信機がofflineなら待機し、RTPは届いているのにdecode outputが出ない場合は異常として復旧する。
 
 設定ファイルは起動時に検証される。multicast address、RTP port / payload type、映像サイズ・fps、HTTP bind、audio parameter などが不正な場合は pipeline 構築前にエラーで終了する。
 
@@ -294,6 +294,7 @@ cargo build
 - `estimated_av_sync_ms` / `estimated_audio_offset_ms` は設定したvideo/audio jitter buffer差に基づく推定値。video/audioは独立RTPストリームで、RTCP/rtpbinによるsender-clock同期はまだ実装していないため、実測A/V同期値としては扱わない
 - RXは送信元/SSRCを選別しない。複数TXを同時運用する場合はstreamごとにmulticast groupまたはRTP portを分け、同じgroup+portへ複数送信しない
 - RTP/UDP multicastには再送/FEC/暗号化を実装していない。packet loss耐性より低遅延を優先する構成で、信頼できるLANを前提とする
+- TXの`/healthz`はローカルのcapture/encode/packetize経路が流れていることを示すが、receiverへの到達確認ではない。end-to-end delivery acknowledgement/RTCPは未実装
 - 実機の遅延検証と UVC 入力確認は別途必要
 - Raspberry Pi / Linux PC 向けの hardware codec 最適化は今後の調整余地がある
 - systemdのRXをLinux desktopで使う場合、display sessionの環境や権限は環境依存。KMS/DRMを使うRaspberry Piとは条件が異なる
@@ -307,7 +308,7 @@ Pull Request と `main` への push では、GitHub Actions で以下を実行�
 - `cargo fmt --check` / `clippy -D warnings`
 - workspace 全体の `cargo check`
 - unit test（配布する全TOMLとproduction sink/pipelineのparse検証を含む）
-- GStreamer を使った tx/rx loopback smoke test（映像・音声の実buffer通過、TX停止時のRX stall検出/再起動/復旧を確認）
+- GStreamer を使った tx/rx loopback smoke test（映像・音声の実buffer通過、RTP ingressがあるのにdecode outputが無い異常、TX停止時のRX stall検出/再起動/復旧を確認）
 - TX startup failureがHTTP監視を維持したまま再試行されること、RXが送信機offline中に無駄な再起動をしないことを確認
 - Ubuntu 22.04 x86_64 / arm64 と Debian 12 arm64 でrelease package生成・checksum・manifest・local install検証
 
