@@ -285,6 +285,17 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                         qos_total = current;
                     }
                 }
+                changed = events.terminal.changed() => {
+                    if changed.is_err() {
+                        break "pipeline terminal event channel closed".to_string();
+                    }
+                    let event = events.terminal.borrow_and_update().clone();
+                    let Some(event) = event else {
+                        continue;
+                    };
+                    let _ = handle_tx_event(&state, &event).await;
+                    break event.message();
+                }
                 event = events.bus.recv() => {
                     let Some(event) = event else {
                         break "pipeline bus event channel closed".to_string();
