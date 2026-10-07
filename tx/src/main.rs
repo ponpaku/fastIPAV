@@ -109,6 +109,9 @@ fn default_config_path() -> String {
 }
 
 async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<()> {
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
+
     loop {
         let interface_name = resolve_interface_name(config.network.interface_override())
             .context("failed to resolve multicast interface")?;
@@ -151,9 +154,6 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         let mut watchdog =
             tokio::time::interval(Duration::from_millis(config.recovery.monitor_interval_ms));
         watchdog.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-        let shutdown = shutdown_signal();
-        tokio::pin!(shutdown);
 
         let restart_reason = loop {
             tokio::select! {
