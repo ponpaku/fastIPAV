@@ -170,32 +170,33 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         };
         state.set_interface(interface_name.clone()).await;
 
-        let mut pipeline =
-            match GstServicePipeline::for_rx(&cycle_config, interface_name.as_deref()) {
-                Ok(pipeline) => pipeline,
-                Err(err) => {
-                    let reason = format!("failed to construct rx pipeline: {err:#}");
-                    if auto_decoder && !force_software_decoder {
-                        force_software_decoder = true;
-                        state.bump_pipeline_restarts().await;
-                        state
-                            .mark_failed(format!(
-                                "rx auto codec pipeline failed; retrying once with avdec_h264: {reason}"
-                            ))
-                            .await;
-                        warn!(
-                            "rx automatic codec pipeline failed; retrying with avdec_h264: {}",
-                            reason
-                        );
-                        continue;
-                    }
-
+        let pipeline_result =
+            GstServicePipeline::for_rx(&cycle_config, interface_name.as_deref());
+        let mut pipeline = match pipeline_result {
+            Ok(pipeline) => pipeline,
+            Err(err) => {
+                let reason = format!("failed to construct rx pipeline: {err:#}");
+                if auto_decoder && !force_software_decoder {
+                    force_software_decoder = true;
+                    state.bump_pipeline_restarts().await;
                     state
-                        .mark_failed(format!("rx pipeline construction failed: {reason}"))
+                        .mark_failed(format!(
+                            "rx auto codec pipeline failed; retrying once with avdec_h264: {reason}"
+                        ))
                         .await;
-                    return Err(anyhow!(reason));
+                    warn!(
+                        "rx automatic codec pipeline failed; retrying with avdec_h264: {}",
+                        reason
+                    );
+                    continue;
                 }
-            };
+
+                state
+                    .mark_failed(format!("rx pipeline construction failed: {reason}"))
+                    .await;
+                return Err(anyhow!(reason));
+            }
+        };
         let uses_v4l2_decoder = pipeline.descriptions().video.contains("v4l2h264dec");
         state
             .set_pipeline_descriptions(
