@@ -522,21 +522,6 @@ if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
   ensure_service_user
 fi
 
-log "installing binaries to ${PREFIX}/bin"
-as_root install -d -m 0755 "${PREFIX}/bin"
-TX_STAGED="${PREFIX}/bin/.tx.fastipav.new.${BASHPID}"
-RX_STAGED="${PREFIX}/bin/.rx.fastipav.new.${BASHPID}"
-as_root install -m 0755 "${PACKAGE_DIR}/bin/tx" "${TX_STAGED}"
-as_root install -m 0755 "${PACKAGE_DIR}/bin/rx" "${RX_STAGED}"
-as_root mv -f "${TX_STAGED}" "${PREFIX}/bin/tx"
-as_root mv -f "${RX_STAGED}" "${PREFIX}/bin/rx"
-
-log "installing shared assets to ${SHARE_DIR}"
-as_root install -d "${SHARE_DIR}/configs" "${SHARE_DIR}/systemd"
-as_root install -m 0644 "${PACKAGE_DIR}/LICENSE" "${SHARE_DIR}/LICENSE"
-as_root cp -f "${PACKAGE_DIR}/configs/"*.toml "${SHARE_DIR}/configs/"
-as_root cp -f "${PACKAGE_DIR}/systemd/"*.service "${SHARE_DIR}/systemd/"
-
 log "installing default config files to ${CONFIG_DIR}"
 as_root install -d -m 0755 "${CONFIG_DIR}"
 if [ ! -f "${CONFIG_DIR}/tx.toml" ]; then
@@ -550,6 +535,9 @@ else
   log "keeping existing ${CONFIG_DIR}/rx.toml"
 fi
 
+log "preparing binary directory ${PREFIX}/bin"
+as_root install -d -m 0755 "${PREFIX}/bin"
+
 if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
   # Keep service configs readable by the dedicated daemon without exposing
   # custom pipeline fragments or embedded URIs to every local user.
@@ -557,6 +545,24 @@ if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
   as_root chmod 0640 "${CONFIG_DIR}/tx.toml" "${CONFIG_DIR}/rx.toml"
 
   need_cmd runuser
+  log "validating service-user access before replacing binaries"
+  as_root runuser -u avoverip -- test -x "${PREFIX}/bin" ||
+    fail "service user avoverip cannot traverse ${PREFIX}/bin"
+  as_root runuser -u avoverip -- test -r "${CONFIG_DIR}/tx.toml" ||
+    fail "service user avoverip cannot read ${CONFIG_DIR}/tx.toml"
+  as_root runuser -u avoverip -- test -r "${CONFIG_DIR}/rx.toml" ||
+    fail "service user avoverip cannot read ${CONFIG_DIR}/rx.toml"
+fi
+
+log "installing binaries to ${PREFIX}/bin"
+TX_STAGED="${PREFIX}/bin/.tx.fastipav.new.${BASHPID}"
+RX_STAGED="${PREFIX}/bin/.rx.fastipav.new.${BASHPID}"
+as_root install -m 0755 "${PACKAGE_DIR}/bin/tx" "${TX_STAGED}"
+as_root install -m 0755 "${PACKAGE_DIR}/bin/rx" "${RX_STAGED}"
+as_root mv -f "${TX_STAGED}" "${PREFIX}/bin/tx"
+as_root mv -f "${RX_STAGED}" "${PREFIX}/bin/rx"
+
+if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
   log "validating installed binaries and configs as service user avoverip"
   as_root runuser -u avoverip -- "${PREFIX}/bin/tx" \
     --config "${CONFIG_DIR}/tx.toml" --check-config >/dev/null ||
@@ -565,6 +571,12 @@ if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
     --config "${CONFIG_DIR}/rx.toml" --check-config >/dev/null ||
     fail "installed rx binary/config is not usable by service user avoverip"
 fi
+
+log "installing shared assets to ${SHARE_DIR}"
+as_root install -d "${SHARE_DIR}/configs" "${SHARE_DIR}/systemd"
+as_root install -m 0644 "${PACKAGE_DIR}/LICENSE" "${SHARE_DIR}/LICENSE"
+as_root cp -f "${PACKAGE_DIR}/configs/"*.toml "${SHARE_DIR}/configs/"
+as_root cp -f "${PACKAGE_DIR}/systemd/"*.service "${SHARE_DIR}/systemd/"
 
 PREFIX_SED="$(escape_sed_replacement "${PREFIX}")"
 CONFIG_DIR_SED="$(escape_sed_replacement "${CONFIG_DIR}")"
