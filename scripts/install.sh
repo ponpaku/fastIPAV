@@ -423,7 +423,20 @@ PACKAGE_NAME="$(artifact_name "${VERSION}" "${ARCH}")"
 PACKAGE_BASENAME="${PACKAGE_NAME%.tar.gz}"
 CHECKSUM_NAME="$(checksum_name "${VERSION}" "${ARCH}")"
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "${TMP_DIR}"' EXIT
+TX_STAGED=""
+RX_STAGED=""
+
+cleanup() {
+  rm -rf "${TMP_DIR}"
+  if [ -n "${TX_STAGED}" ]; then
+    as_root rm -f "${TX_STAGED}" || true
+  fi
+  if [ -n "${RX_STAGED}" ]; then
+    as_root rm -f "${RX_STAGED}" || true
+  fi
+}
+trap cleanup EXIT
+
 LOCAL_PACKAGE="${REPO_ROOT}/dist/${PACKAGE_NAME}"
 LOCAL_CHECKSUM="${REPO_ROOT}/dist/${CHECKSUM_NAME}"
 PACKAGE_PATH="${TMP_DIR}/${PACKAGE_NAME}"
@@ -572,7 +585,9 @@ fi
 
 log "activating binaries in ${PREFIX}/bin"
 as_root mv -f "${TX_STAGED}" "${PREFIX}/bin/tx"
+TX_STAGED=""
 as_root mv -f "${RX_STAGED}" "${PREFIX}/bin/rx"
+RX_STAGED=""
 
 log "installing shared assets to ${SHARE_DIR}"
 as_root install -d "${SHARE_DIR}/configs" "${SHARE_DIR}/systemd"
