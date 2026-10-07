@@ -219,7 +219,8 @@ impl SharedServiceState {
     }
 
     pub async fn bump_dropped_frames(&self) {
-        self.stats.write().await.dropped_frames += 1;
+        let mut stats = self.stats.write().await;
+        stats.dropped_frames = stats.dropped_frames.saturating_add(1);
     }
 
     pub async fn add_audio_chunks_total(&self, delta: u64) {
@@ -228,11 +229,13 @@ impl SharedServiceState {
     }
 
     pub async fn bump_dropped_audio_chunks(&self) {
-        self.stats.write().await.dropped_audio_chunks += 1;
+        let mut stats = self.stats.write().await;
+        stats.dropped_audio_chunks = stats.dropped_audio_chunks.saturating_add(1);
     }
 
     pub async fn bump_audio_underruns(&self) {
-        self.stats.write().await.audio_underruns += 1;
+        let mut stats = self.stats.write().await;
+        stats.audio_underruns = stats.audio_underruns.saturating_add(1);
     }
 
     pub async fn add_qos_events(&self, delta: u64) {
@@ -241,7 +244,8 @@ impl SharedServiceState {
     }
 
     pub async fn bump_pipeline_restarts(&self) {
-        self.stats.write().await.pipeline_restarts += 1;
+        let mut stats = self.stats.write().await;
+        stats.pipeline_restarts = stats.pipeline_restarts.saturating_add(1);
     }
 
     pub async fn set_last_error(&self, message: impl Into<String>) {
