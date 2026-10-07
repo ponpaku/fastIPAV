@@ -558,10 +558,12 @@ impl RxConfig {
                 self.recovery.media_timeout_ms
             );
         }
-        if matches!(
-            self.video.renderer.resolve(&self.platform.profile),
-            RendererKind::KmsDrm
-        ) && !self.video.fullscreen
+        if self.video.sink_element.trim().is_empty()
+            && matches!(
+                self.video.renderer.resolve(&self.platform.profile),
+                RendererKind::KmsDrm
+            )
+            && !self.video.fullscreen
         {
             bail!("video.fullscreen=false is not supported with the KMS/DRM renderer");
         }
@@ -891,6 +893,15 @@ mod tests {
         let mut config = TxConfig::default();
         config.network.multicast_group = "192.168.1.10".to_string();
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn custom_sink_bypasses_renderer_fullscreen_constraint() {
+        let mut config = RxConfig::default();
+        config.platform.profile = PlatformProfile::RaspberryPi;
+        config.video.sink_element = "fakesink sync=false".to_string();
+        config.video.fullscreen = false;
+        config.validate().unwrap();
     }
 
     #[test]
