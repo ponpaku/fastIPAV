@@ -465,12 +465,13 @@ if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
 fi
 
 log "installing binaries to ${PREFIX}/bin"
-as_root install -d "${PREFIX}/bin"
-for role in tx rx; do
-  staged="${PREFIX}/bin/.${role}.fastipav.new.$"
-  as_root install -m 0755 "${PACKAGE_DIR}/bin/${role}" "${staged}"
-  as_root mv -f "${staged}" "${PREFIX}/bin/${role}"
-done
+as_root install -d -m 0755 "${PREFIX}/bin"
+TX_STAGED="${PREFIX}/bin/.tx.fastipav.new.$"
+RX_STAGED="${PREFIX}/bin/.rx.fastipav.new.$"
+as_root install -m 0755 "${PACKAGE_DIR}/bin/tx" "${TX_STAGED}"
+as_root install -m 0755 "${PACKAGE_DIR}/bin/rx" "${RX_STAGED}"
+as_root mv -f "${TX_STAGED}" "${PREFIX}/bin/tx"
+as_root mv -f "${RX_STAGED}" "${PREFIX}/bin/rx"
 
 log "installing shared assets to ${SHARE_DIR}"
 as_root install -d "${SHARE_DIR}/configs" "${SHARE_DIR}/systemd"
