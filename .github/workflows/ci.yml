@@ -40,7 +40,7 @@ jobs:
         run: |
           curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain none
           echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
-          "${HOME}/.cargo/bin/rustup" show active-toolchain
+          "${HOME}/.cargo/bin/rustup" toolchain install 1.99.0 --profile minimal
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --version 0.22.2 --locked
@@ -101,7 +101,7 @@ jobs:
         run: |
           curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain none
           echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
-          "${HOME}/.cargo/bin/rustup" show active-toolchain
+          "${HOME}/.cargo/bin/rustup" toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
 
       - name: Validate shell scripts
         run: |
