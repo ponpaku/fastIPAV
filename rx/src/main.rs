@@ -71,12 +71,7 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let resolved_renderer = config
-        .video
-        .renderer
-        .resolve(&config.platform.profile)
-        .as_str()
-        .to_string();
+    let configured_renderer = config.video.renderer.as_str().to_string();
 
     let state = SharedServiceState::new("rx", &config.node_name, "gstreamer");
     state
@@ -88,7 +83,7 @@ async fn main() -> Result<()> {
         .await;
     state.set_video_enabled(true).await;
     state.set_audio_enabled(config.audio.enabled).await;
-    state.set_renderer(resolved_renderer.clone()).await;
+    state.set_renderer(configured_renderer).await;
     state
         .set_jitter_buffer_ms(config.video.jitter_latency_ms)
         .await;
