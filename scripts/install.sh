@@ -159,20 +159,26 @@ install_deps() {
     alsa-utils
 }
 
+enable_and_restart_service() {
+  local service="$1"
+  as_root systemctl enable "${service}"
+  as_root systemctl restart "${service}"
+}
+
 enable_services() {
   local role="$1"
   need_cmd systemctl
   as_root systemctl daemon-reload
   case "${role}" in
     tx)
-      as_root systemctl enable --now avoverip-tx
+      enable_and_restart_service avoverip-tx
       ;;
     rx)
-      as_root systemctl enable --now avoverip-rx
+      enable_and_restart_service avoverip-rx
       ;;
     both)
-      as_root systemctl enable --now avoverip-tx
-      as_root systemctl enable --now avoverip-rx
+      enable_and_restart_service avoverip-tx
+      enable_and_restart_service avoverip-rx
       ;;
     *)
       fail "invalid service role: ${role}"
