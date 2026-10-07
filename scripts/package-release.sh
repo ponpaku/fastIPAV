@@ -147,13 +147,7 @@ CHECKSUM_PATH="dist/${PACKAGE_BASENAME}.sha256"
 rm -f "${ARCHIVE_PATH}" "${CHECKSUM_PATH}"
 
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct HEAD)}"
-printf '%s\n' "${SOURCE_DATE_EPOCH}" | grep -Eq '^[0-9]+
-  sha256sum "${PACKAGE_BASENAME}.tar.gz" >"${PACKAGE_BASENAME}.sha256"
-)
-[ -s "${CHECKSUM_PATH}" ] || fail "failed to create checksum"
-log "wrote checksum ${CHECKSUM_PATH}"
-log "package created: ${ARCHIVE_PATH}"
- ||
+printf '%s\n' "${SOURCE_DATE_EPOCH}" | grep -Eq '^[0-9]+$' ||
   fail "SOURCE_DATE_EPOCH must be an integer Unix timestamp"
 
 log "creating deterministic ${ARCHIVE_PATH}"
