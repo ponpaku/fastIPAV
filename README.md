@@ -204,7 +204,7 @@ sudo systemctl enable --now avoverip-rx
 - multicast group: `239.255.10.10`
 - video port: `5004`
 - audio port: `5006`
-- interface: `auto`（activeな有線/非Wi-Fi NICが1本ならそれを優先し、無ければWi-Fiを使う。候補が同種で複数ある場合は明示指定が必要）
+- interface: `auto`（activeなmulticast対応interfaceが1本だけなら自動選択する。EthernetとWi‑Fiなど複数候補が同時にupの場合は誤送信を避けるため起動せず、明示指定が必要）
 - TTL: `1`
 - HTTP bind: `127.0.0.1`
 
