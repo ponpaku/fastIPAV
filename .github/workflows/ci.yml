@@ -146,6 +146,16 @@ jobs:
           grep -F "ExecStart=${install_root}/usr/local/bin/rx --config ${install_root}/etc/avoverip/rx.toml" \
             "${install_root}/systemd/avoverip-rx.service"
 
+          chmod 0600 "${install_root}/etc/avoverip/tx.toml" "${install_root}/etc/avoverip/rx.toml"
+          bash scripts/install.sh \
+            --version "${release_tag}" \
+            --local-dist \
+            --prefix "${install_root}/usr/local" \
+            --config-dir "${install_root}/etc/avoverip" \
+            --systemd-dir "${install_root}/systemd"
+          test "$(stat -c '%a' "${install_root}/etc/avoverip/tx.toml")" = "600"
+          test "$(stat -c '%a' "${install_root}/etc/avoverip/rx.toml")" = "600"
+
           PATH=/usr/bin:/bin \
           TX_BIN="${install_root}/usr/local/bin/tx" \
           RX_BIN="${install_root}/usr/local/bin/rx" \
