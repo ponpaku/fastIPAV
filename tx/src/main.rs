@@ -245,15 +245,23 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         let started = Instant::now();
         let mut last_video_buffer = started;
         let mut last_audio_buffer = started;
+        let mut last_video_egress = started;
+        let mut last_audio_egress = started;
+        let mut first_video_encoded: Option<Instant> = None;
+        let mut first_audio_processed: Option<Instant> = None;
         let mut video_total = 0_u64;
         let mut audio_total = 0_u64;
         let mut video_ingress_total = 0_u64;
         let mut audio_ingress_total = 0_u64;
+        let mut video_egress_total = 0_u64;
+        let mut audio_egress_total = 0_u64;
         let mut first_video_ingress: Option<Instant> = None;
         let mut first_audio_ingress: Option<Instant> = None;
         let mut qos_total = 0_u64;
         let mut video_ready = false;
         let mut audio_ready = !config.audio.enabled;
+        let mut video_egress_ready = false;
+        let mut audio_egress_ready = !config.audio.enabled;
         let mut service_ready = false;
         let media_timeout = Duration::from_millis(config.recovery.media_timeout_ms);
         let mut watchdog =
@@ -299,6 +307,16 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                             );
                         }
                     }
+                    if video_ready
+                        && !video_egress_ready
+                        && first_video_encoded
+                            .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
+                    {
+                        break format!(
+                            "encoded video is flowing but RTP packetizer produced no packets within {} ms",
+                            config.recovery.media_timeout_ms
+                        );
+                    }
                     if config.audio.enabled && !audio_ready {
                         if let Some(first_seen) = first_audio_ingress {
                             if first_seen.elapsed() > media_timeout {
@@ -314,15 +332,41 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                             );
                         }
                     }
+                    if config.audio.enabled
+                        && audio_ready
+                        && !audio_egress_ready
+                        && first_audio_processed
+                            .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
+                    {
+                        break format!(
+                            "processed audio is flowing but RTP packetizer produced no packets within {} ms",
+                            config.recovery.media_timeout_ms
+                        );
+                    }
                     if video_ready && last_video_buffer.elapsed() > media_timeout {
                         break format!(
                             "video stream stalled for more than {} ms",
                             config.recovery.media_timeout_ms
                         );
                     }
+                    if video_egress_ready && last_video_egress.elapsed() > media_timeout {
+                        break format!(
+                            "video RTP egress stalled for more than {} ms",
+                            config.recovery.media_timeout_ms
+                        );
+                    }
                     if config.audio.enabled && audio_ready && last_audio_buffer.elapsed() > media_timeout {
                         break format!(
-                            "audio stream stalled for more than {} ms",
+                            "audio processing stalled for more than {} ms",
+                            config.recovery.media_timeout_ms
+                        );
+                    }
+                    if config.audio.enabled
+                        && audio_egress_ready
+                        && last_audio_egress.elapsed() > media_timeout
+                    {
+                        break format!(
+                            "audio RTP egress stalled for more than {} ms",
                             config.recovery.media_timeout_ms
                         );
                     }
@@ -394,11 +438,17 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                     }
                     if !video_ready && heartbeat.total > 0 {
                         video_ready = true;
-                        info!("tx received first video buffer");
+                        first_video_encoded = heartbeat.observed_at;
+                        info!("tx received first encoded video buffer");
                     }
-                    if !service_ready && video_ready && audio_ready {
+                    if !service_ready
+                        && video_ready
+                        && video_egress_ready
+                        && audio_ready
+                        && audio_egress_ready
+                    {
                         service_ready = true;
-                        state.mark_ready("tx media is flowing").await;
+                        state.mark_ready("tx RTP media is flowing").await;
                     }
                 }
                 changed = events.audio.changed() => {
@@ -415,11 +465,67 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                     }
                     if !audio_ready && heartbeat.total > 0 {
                         audio_ready = true;
-                        info!("tx received first audio buffer");
+                        first_audio_processed = heartbeat.observed_at;
+                        info!("tx received first processed audio buffer");
                     }
-                    if !service_ready && video_ready && audio_ready {
+                    if !service_ready
+                        && video_ready
+                        && video_egress_ready
+                        && audio_ready
+                        && audio_egress_ready
+                    {
                         service_ready = true;
-                        state.mark_ready("tx media is flowing").await;
+                        state.mark_ready("tx RTP media is flowing").await;
+                    }
+                }
+                changed = events.video_egress.changed() => {
+                    if changed.is_err() {
+                        break "video RTP egress heartbeat channel closed".to_string();
+                    }
+                    let heartbeat = *events.video_egress.borrow_and_update();
+                    if let Some(observed_at) = heartbeat.observed_at {
+                        last_video_egress = observed_at;
+                    }
+                    if heartbeat.total > video_egress_total {
+                        video_egress_total = heartbeat.total;
+                    }
+                    if !video_egress_ready && heartbeat.total > 0 {
+                        video_egress_ready = true;
+                        info!("tx emitted first video RTP packet");
+                    }
+                    if !service_ready
+                        && video_ready
+                        && video_egress_ready
+                        && audio_ready
+                        && audio_egress_ready
+                    {
+                        service_ready = true;
+                        state.mark_ready("tx RTP media is flowing").await;
+                    }
+                }
+                changed = events.audio_egress.changed() => {
+                    if changed.is_err() {
+                        break "audio RTP egress heartbeat channel closed".to_string();
+                    }
+                    let heartbeat = *events.audio_egress.borrow_and_update();
+                    if let Some(observed_at) = heartbeat.observed_at {
+                        last_audio_egress = observed_at;
+                    }
+                    if heartbeat.total > audio_egress_total {
+                        audio_egress_total = heartbeat.total;
+                    }
+                    if !audio_egress_ready && heartbeat.total > 0 {
+                        audio_egress_ready = true;
+                        info!("tx emitted first audio RTP packet");
+                    }
+                    if !service_ready
+                        && video_ready
+                        && video_egress_ready
+                        && audio_ready
+                        && audio_egress_ready
+                    {
+                        service_ready = true;
+                        state.mark_ready("tx RTP media is flowing").await;
                     }
                 }
             }
