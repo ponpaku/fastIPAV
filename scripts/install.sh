@@ -280,6 +280,11 @@ ARCH="$(normalize_arch)"
 EXPECTED_TARGET="$(expected_target_for_arch "${ARCH}")"
 PROFILE_SUFFIX="$(detect_profile_suffix)"
 
+if [ "${PROFILE_SUFFIX}" = "default" ] &&
+  { [ "${ENABLE_SERVICE}" = "rx" ] || [ "${ENABLE_SERVICE}" = "both" ]; }; then
+  log "warning: Linux desktop RX usually needs a graphical-session environment; the system service is primarily suitable for KMS/headless-style sinks"
+fi
+
 if [ -z "${VERSION}" ]; then
   VERSION="$(resolve_latest_version)"
 fi
