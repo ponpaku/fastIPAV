@@ -61,7 +61,8 @@ async fn main() -> Result<()> {
     }
     config.validate()?;
     if cli.check_config {
-        println!("tx config OK: {}", config_path);
+        GstServicePipeline::for_tx(&config, None)?;
+        println!("tx config and pipeline OK: {}", config_path);
         return Ok(());
     }
 
