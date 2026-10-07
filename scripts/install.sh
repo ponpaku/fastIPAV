@@ -340,7 +340,240 @@ for path_value in "${PREFIX}" "${CONFIG_DIR}" "${SYSTEMD_DIR}"; do
     /*) ;;
     *) fail "install paths must be absolute: ${path_value}" ;;
   esac
-  printf '%s\n' "${path_value}" | grep -Eq '^/[A-Za-z0-9._/-]+$' ||
+  [ "${path_value}" != "/" ] || fail "install paths must not be the filesystem root"
+  case "/${path_value#/}/" in
+    *"/../"*|*"/./"*) fail "install paths must not contain '.' or '..' components: ${path_value}" ;;
+  esac
+  printf '%s\n' "${path_value}" | grep -Eq '^/[A-Za-z0-9._/-]+
+
+case "${ENABLE_SERVICE}" in
+  ""|tx|rx|both) ;;
+  *) fail "--enable-service must be tx, rx, or both" ;;
+esac
+
+if [ -n "${ENABLE_SERVICE}" ] && [ "${SYSTEMD_DIR}" != "/etc/systemd/system" ]; then
+  fail "--enable-service requires --systemd-dir /etc/systemd/system"
+fi
+
+if [ "${INSTALL_DEPS}" = true ]; then
+  need_cmd apt-get
+  install_deps
+fi
+
+need_cmd curl
+need_cmd tar
+need_cmd install
+need_cmd awk
+need_cmd grep
+need_cmd sed
+need_cmd sha256sum
+
+ARCH="$(normalize_arch)"
+EXPECTED_TARGET="$(expected_target_for_arch "${ARCH}")"
+PROFILE_SUFFIX="$(detect_profile_suffix)"
+
+if [ "${PROFILE_SUFFIX}" = "default" ] &&
+  { [ "${ENABLE_SERVICE}" = "rx" ] || [ "${ENABLE_SERVICE}" = "both" ]; }; then
+  log "warning: Linux desktop RX usually needs a graphical-session environment; the system service is primarily suitable for KMS/headless-style sinks"
+fi
+
+if [ "${USE_LOCAL_DIST}" = true ] && [ -z "${VERSION}" ]; then
+  fail "--local-dist requires --version"
+fi
+
+if [ -z "${VERSION}" ]; then
+  VERSION="$(resolve_latest_version)"
+fi
+[ -n "${VERSION}" ] || fail "failed to resolve release version"
+printf '%s\n' "${VERSION}" |
+  grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' ||
+  fail "invalid release version: ${VERSION}"
+
+PACKAGE_NAME="$(artifact_name "${VERSION}" "${ARCH}")"
+PACKAGE_BASENAME="${PACKAGE_NAME%.tar.gz}"
+CHECKSUM_NAME="$(checksum_name "${VERSION}" "${ARCH}")"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "${TMP_DIR}"' EXIT
+LOCAL_PACKAGE="${REPO_ROOT}/dist/${PACKAGE_NAME}"
+LOCAL_CHECKSUM="${REPO_ROOT}/dist/${CHECKSUM_NAME}"
+PACKAGE_PATH="${TMP_DIR}/${PACKAGE_NAME}"
+CHECKSUM_PATH="${TMP_DIR}/${CHECKSUM_NAME}"
+
+if [ "${USE_LOCAL_DIST}" = true ]; then
+  [ -f "${LOCAL_PACKAGE}" ] || fail "local package is missing: ${LOCAL_PACKAGE}"
+  [ -f "${LOCAL_CHECKSUM}" ] ||
+    fail "local checksum is missing: ${LOCAL_CHECKSUM}"
+  log "using explicitly requested local package ${LOCAL_PACKAGE}"
+  cp "${LOCAL_PACKAGE}" "${PACKAGE_PATH}"
+  cp "${LOCAL_CHECKSUM}" "${CHECKSUM_PATH}"
+else
+  download_release_asset "${PACKAGE_NAME}" "${PACKAGE_PATH}"
+  download_release_asset "${CHECKSUM_NAME}" "${CHECKSUM_PATH}"
+fi
+
+verify_package "${PACKAGE_PATH}" "${CHECKSUM_PATH}"
+
+while IFS= read -r entry; do
+  case "${entry}" in
+    "${PACKAGE_BASENAME}"|"${PACKAGE_BASENAME}/"*) ;;
+    *) fail "release archive contains unexpected path: ${entry}" ;;
+  esac
+  case "/${entry}/" in
+    *"/../"*|*"/./"*) fail "release archive contains unsafe path: ${entry}" ;;
+  esac
+done < <(tar -tzf "${PACKAGE_PATH}")
+
+tar -tvzf "${PACKAGE_PATH}" | awk '
+  $1 !~ /^[d-]/ { bad = 1 }
+  END { exit bad }
+' || fail "release archive contains links or special file entries"
+
+tar --no-same-owner --no-same-permissions -xzf "${PACKAGE_PATH}" -C "${TMP_DIR}"
+
+PACKAGE_DIR="${TMP_DIR}/${PACKAGE_BASENAME}"
+[ -d "${PACKAGE_DIR}" ] ||
+  fail "release archive does not contain expected directory ${PACKAGE_BASENAME}"
+[ -f "${PACKAGE_DIR}/manifest.txt" ] || fail "release manifest is missing"
+
+MANIFEST_NAME="$(manifest_value "${PACKAGE_DIR}" name)"
+MANIFEST_VERSION="$(manifest_value "${PACKAGE_DIR}" version)"
+MANIFEST_TARGET="$(manifest_value "${PACKAGE_DIR}" target)"
+MANIFEST_ARCH="$(manifest_value "${PACKAGE_DIR}" arch)"
+
+[ "${MANIFEST_NAME}" = "${PACKAGE_BASENAME}" ] ||
+  fail "release manifest name mismatch: expected ${PACKAGE_BASENAME}, got ${MANIFEST_NAME:-<empty>}"
+[ "${MANIFEST_VERSION}" = "${VERSION}" ] ||
+  fail "release manifest version mismatch: expected ${VERSION}, got ${MANIFEST_VERSION:-<empty>}"
+[ "${MANIFEST_TARGET}" = "${EXPECTED_TARGET}" ] ||
+  fail "release manifest target mismatch: expected ${EXPECTED_TARGET}, got ${MANIFEST_TARGET:-<empty>}"
+[ "${MANIFEST_ARCH}" = "${ARCH}" ] ||
+  fail "release manifest architecture mismatch: expected ${ARCH}, got ${MANIFEST_ARCH:-<empty>}"
+
+for required in \
+  bin/tx \
+  bin/rx \
+  LICENSE \
+  systemd/avoverip-tx.service \
+  systemd/avoverip-rx.service; do
+  [ -e "${PACKAGE_DIR}/${required}" ] ||
+    fail "release package is missing ${required}"
+done
+[ -x "${PACKAGE_DIR}/bin/tx" ] || fail "packaged tx binary is not executable"
+[ -x "${PACKAGE_DIR}/bin/rx" ] || fail "packaged rx binary is not executable"
+
+EXPECTED_BINARY_VERSION="${VERSION#v}"
+[ "$("${PACKAGE_DIR}/bin/tx" --version)" = "tx ${EXPECTED_BINARY_VERSION}" ] ||
+  fail "packaged tx binary version does not match ${VERSION}"
+[ "$("${PACKAGE_DIR}/bin/rx" --version)" = "rx ${EXPECTED_BINARY_VERSION}" ] ||
+  fail "packaged rx binary version does not match ${VERSION}"
+
+TX_CONFIG="${PACKAGE_DIR}/configs/tx.${PROFILE_SUFFIX}.toml"
+RX_CONFIG="${PACKAGE_DIR}/configs/rx.${PROFILE_SUFFIX}.toml"
+[ -f "${TX_CONFIG}" ] || fail "release package is missing ${TX_CONFIG#"${PACKAGE_DIR}/"}"
+[ -f "${RX_CONFIG}" ] || fail "release package is missing ${RX_CONFIG#"${PACKAGE_DIR}/"}"
+
+TX_CONFIG_TO_CHECK="${TX_CONFIG}"
+RX_CONFIG_TO_CHECK="${RX_CONFIG}"
+if [ -f "${CONFIG_DIR}/tx.toml" ]; then
+  TX_CONFIG_TO_CHECK="${CONFIG_DIR}/tx.toml"
+fi
+if [ -f "${CONFIG_DIR}/rx.toml" ]; then
+  RX_CONFIG_TO_CHECK="${CONFIG_DIR}/rx.toml"
+fi
+
+log "validating effective config files with the new binaries"
+as_root "${PACKAGE_DIR}/bin/tx" --config "${TX_CONFIG_TO_CHECK}" --check-config >/dev/null \
+  || fail "tx config is not compatible with ${VERSION}: ${TX_CONFIG_TO_CHECK}"
+as_root "${PACKAGE_DIR}/bin/rx" --config "${RX_CONFIG_TO_CHECK}" --check-config >/dev/null \
+  || fail "rx config is not compatible with ${VERSION}: ${RX_CONFIG_TO_CHECK}"
+
+if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
+  ensure_service_groups
+  ensure_service_user
+fi
+
+log "installing binaries to ${PREFIX}/bin"
+as_root install -d -m 0755 "${PREFIX}/bin"
+TX_STAGED="${PREFIX}/bin/.tx.fastipav.new.${BASHPID}"
+RX_STAGED="${PREFIX}/bin/.rx.fastipav.new.${BASHPID}"
+as_root install -m 0755 "${PACKAGE_DIR}/bin/tx" "${TX_STAGED}"
+as_root install -m 0755 "${PACKAGE_DIR}/bin/rx" "${RX_STAGED}"
+as_root mv -f "${TX_STAGED}" "${PREFIX}/bin/tx"
+as_root mv -f "${RX_STAGED}" "${PREFIX}/bin/rx"
+
+log "installing shared assets to ${SHARE_DIR}"
+as_root install -d "${SHARE_DIR}/configs" "${SHARE_DIR}/systemd"
+as_root install -m 0644 "${PACKAGE_DIR}/LICENSE" "${SHARE_DIR}/LICENSE"
+as_root cp -f "${PACKAGE_DIR}/configs/"*.toml "${SHARE_DIR}/configs/"
+as_root cp -f "${PACKAGE_DIR}/systemd/"*.service "${SHARE_DIR}/systemd/"
+
+log "installing default config files to ${CONFIG_DIR}"
+as_root install -d -m 0755 "${CONFIG_DIR}"
+if [ ! -f "${CONFIG_DIR}/tx.toml" ]; then
+  as_root install -m 0644 "${TX_CONFIG}" "${CONFIG_DIR}/tx.toml"
+else
+  log "keeping existing ${CONFIG_DIR}/tx.toml"
+  as_root chmod 0644 "${CONFIG_DIR}/tx.toml"
+fi
+if [ ! -f "${CONFIG_DIR}/rx.toml" ]; then
+  as_root install -m 0644 "${RX_CONFIG}" "${CONFIG_DIR}/rx.toml"
+else
+  log "keeping existing ${CONFIG_DIR}/rx.toml"
+  as_root chmod 0644 "${CONFIG_DIR}/rx.toml"
+fi
+
+PREFIX_SED="$(escape_sed_replacement "${PREFIX}")"
+CONFIG_DIR_SED="$(escape_sed_replacement "${CONFIG_DIR}")"
+
+log "installing systemd unit files to ${SYSTEMD_DIR}"
+as_root install -d "${SYSTEMD_DIR}"
+for role in tx rx; do
+  unit_source="${PACKAGE_DIR}/systemd/avoverip-${role}.service"
+  [ -f "${unit_source}" ] || fail "release package is missing systemd unit for ${role}"
+  unit_rendered="${TMP_DIR}/avoverip-${role}.service"
+  sed \
+    -e "s#/usr/local/bin/#${PREFIX_SED}/bin/#g" \
+    -e "s#/etc/avoverip/#${CONFIG_DIR_SED}/#g" \
+    "${unit_source}" >"${unit_rendered}"
+  as_root install -m 0644 "${unit_rendered}" "${SYSTEMD_DIR}/avoverip-${role}.service"
+done
+
+if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ] && command -v systemctl >/dev/null 2>&1; then
+  if [ -d /run/systemd/system ]; then
+    as_root systemctl daemon-reload
+    if [ -z "${ENABLE_SERVICE}" ]; then
+      restart_active_services
+    fi
+  else
+    log "systemd manager is not running; unit files were installed but not reloaded"
+  fi
+fi
+
+if [ -n "${ENABLE_SERVICE}" ]; then
+  [ -d /run/systemd/system ] ||
+    fail "--enable-service requires a running systemd manager"
+  enable_services "${ENABLE_SERVICE}"
+fi
+
+USER_TO_CHECK="${SUDO_USER:-${USER:-}}"
+if [ -n "${USER_TO_CHECK}" ] && command -v id >/dev/null 2>&1; then
+  USER_GROUPS="$(id -nG "${USER_TO_CHECK}" 2>/dev/null || true)"
+  if ! printf '%s\n' "${USER_GROUPS}" | grep -qw video; then
+    log "note: ${USER_TO_CHECK} is not in the video group"
+  fi
+  if ! printf '%s\n' "${USER_GROUPS}" | grep -qw audio; then
+    log "note: ${USER_TO_CHECK} is not in the audio group"
+  fi
+fi
+
+log "installation complete"
+log "binaries: ${PREFIX}/bin/tx and ${PREFIX}/bin/rx"
+log "configs: ${CONFIG_DIR}/tx.toml and ${CONFIG_DIR}/rx.toml"
+log "shared examples: ${SHARE_DIR}/configs"
+if [ -z "${ENABLE_SERVICE}" ]; then
+  log "services were not enabled automatically; use systemctl enable --now avoverip-{tx,rx} when ready"
+fi
+ ||
     fail "install paths may only contain letters, numbers, '.', '_', '-', and '/': ${path_value}"
 done
 
