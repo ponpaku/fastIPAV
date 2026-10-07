@@ -737,7 +737,7 @@ fn default_encoder_element() -> String {
 }
 
 fn default_decoder_element() -> String {
-    "decodebin".to_string()
+    "auto".to_string()
 }
 
 fn default_fullscreen() -> bool {
