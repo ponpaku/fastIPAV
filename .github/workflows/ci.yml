@@ -151,3 +151,20 @@ jobs:
           RX_BIN="${install_root}/usr/local/bin/rx" \
           CONFIG_DIR="${install_root}/usr/local/share/fastipav/configs" \
             bash scripts/smoke-test.sh
+
+          if [ "${{ matrix.name }}" = "ubuntu-22.04-x86_64" ]; then
+            system_install_root="$(mktemp -d)"
+            bash scripts/install.sh \
+              --version "${release_tag}" \
+              --local-dist \
+              --prefix "${system_install_root}/usr/local" \
+              --config-dir "${system_install_root}/etc/avoverip"
+
+            id -u avoverip >/dev/null
+            test "$(id -u avoverip)" -gt 0
+            test "$(id -u avoverip)" -lt 1000
+            grep -Fx "User=avoverip" /etc/systemd/system/avoverip-tx.service
+            grep -Fx "SupplementaryGroups=video audio" /etc/systemd/system/avoverip-tx.service
+            grep -Fx "User=avoverip" /etc/systemd/system/avoverip-rx.service
+            grep -Fx "SupplementaryGroups=video audio" /etc/systemd/system/avoverip-rx.service
+          fi
