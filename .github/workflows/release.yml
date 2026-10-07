@@ -57,8 +57,12 @@ jobs:
           echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
           "${HOME}/.cargo/bin/rustup" component add rustfmt clippy
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
       - name: Verify release source
         run: |
+          cargo audit
           bash -n scripts/*.sh tools/*.sh
           shellcheck scripts/*.sh tools/*.sh
           cargo fmt --all -- --check
