@@ -610,10 +610,14 @@ fn render_sink(
     profile: &PlatformProfile,
     fullscreen: bool,
     sync: bool,
-    max_lateness_ms: u32,
+    max_lateness_ms: i64,
 ) -> String {
     let sync_value = if sync { "true" } else { "false" };
-    let max_lateness_ns = (max_lateness_ms as u64) * 1_000_000;
+    let max_lateness_ns = if max_lateness_ms < 0 {
+        -1
+    } else {
+        max_lateness_ms.saturating_mul(1_000_000)
+    };
     match renderer {
         RendererKind::Auto => match profile.resolve() {
             PlatformProfile::RaspberryPi => format!(
@@ -711,10 +715,14 @@ fn render_linux_sink(
     sink: LinuxSink,
     fullscreen: bool,
     sync: bool,
-    max_lateness_ms: u32,
+    max_lateness_ms: i64,
 ) -> String {
     let sync_value = if sync { "true" } else { "false" };
-    let max_lateness_ns = (max_lateness_ms as u64) * 1_000_000;
+    let max_lateness_ns = if max_lateness_ms < 0 {
+        -1
+    } else {
+        max_lateness_ms.saturating_mul(1_000_000)
+    };
     match sink {
         LinuxSink::Sdl => format!(
             "sdlvideosink sync={} fullscreen={} qos=true max-lateness={}",
