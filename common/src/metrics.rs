@@ -279,7 +279,6 @@ fn push_note(notes: &mut Vec<String>, note: String) {
     }
 }
 
-
 pub fn pipeline_shape(description: &str) -> String {
     split_pipeline_segments(description)
         .into_iter()
