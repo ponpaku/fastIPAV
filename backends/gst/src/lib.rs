@@ -5,7 +5,7 @@ use gstreamer as gst;
 use std::{
     env, fs,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     thread,
@@ -63,12 +63,6 @@ pub struct PipelineEvents {
     _audio_guard: Option<watch::Sender<MediaHeartbeat>>,
 }
 
-#[derive(Debug, Copy, Clone)]
-enum MediaKind {
-    Video,
-    Audio,
-}
-
 pub struct GstServicePipeline {
     name: &'static str,
     descriptions: PipelineDescriptions,
@@ -107,9 +101,9 @@ impl GstServicePipeline {
         };
         let (video_tx, video_rx) = watch::channel(initial_heartbeat);
         let (audio_tx, audio_rx) = watch::channel(initial_heartbeat);
-        self.install_buffer_probe("video_monitor", MediaKind::Video, video_tx)?;
+        self.install_buffer_probe("video_monitor", video_tx)?;
         let audio_guard = if self.descriptions.audio.is_some() {
-            self.install_buffer_probe("audio_monitor", MediaKind::Audio, audio_tx)?;
+            self.install_buffer_probe("audio_monitor", audio_tx)?;
             None
         } else {
             Some(audio_tx)
@@ -213,7 +207,6 @@ impl GstServicePipeline {
     fn install_buffer_probe(
         &self,
         element_name: &str,
-        _media_kind: MediaKind,
         sender: watch::Sender<MediaHeartbeat>,
     ) -> Result<()> {
         let element = self.pipeline.by_name(element_name).ok_or_else(|| {
@@ -230,9 +223,9 @@ impl GstServicePipeline {
                 element_name
             )
         })?;
-        let mut total = 0_u64;
+        let total = AtomicU64::new(0);
         pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
-            total = total.saturating_add(1);
+            let total = total.fetch_add(1, Ordering::Relaxed).saturating_add(1);
             sender.send_replace(MediaHeartbeat {
                 observed_at: Some(Instant::now()),
                 total,
