@@ -702,14 +702,12 @@ fn render_sink(
                 "kmssink sync={} force-modesetting=false qos=true max-lateness={}",
                 sync_value, max_lateness_ns
             ),
-            PlatformProfile::LinuxPc | PlatformProfile::Auto => {
-                render_linux_sink(
-                    preferred_linux_sink(fullscreen),
-                    fullscreen,
-                    sync,
-                    max_lateness_ms,
-                )
-            }
+            PlatformProfile::LinuxPc | PlatformProfile::Auto => render_linux_sink(
+                preferred_linux_sink(fullscreen),
+                fullscreen,
+                sync,
+                max_lateness_ms,
+            ),
         },
         RendererKind::Sdl => render_linux_sink(LinuxSink::Sdl, fullscreen, sync, max_lateness_ms),
         RendererKind::KmsDrm => format!(
