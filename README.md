@@ -107,6 +107,7 @@ Linux desktopでWayland/X11へ表示するRXは、system serviceではdisplay se
 
 Raspberry Pi は `Raspberry Pi OS Bookworm 64bit` を前提にする。  
 受信では KMS/DRM 寄りの表示経路を優先する。
+既定のKMS sinkは既存display modeを強制変更しない。特殊なmode設定が必要な場合のみ `video.sink_element` で `kmssink force-modesetting=true` などを明示する。
 
 追加確認:
 
