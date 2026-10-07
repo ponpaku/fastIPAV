@@ -408,6 +408,8 @@ fn select_h264_encoder(config: &TxConfig) -> (String, &'static str) {
                 config.video.fps,
                 config.video.bitrate_kbps,
             )
+            && config.video.bitrate_kbps >= 25
+            && config.video.bitrate_kbps % 25 == 0
             && has_element("v4l2h264enc")
         {
             let bitrate_bps = (config.video.bitrate_kbps as u64) * 1_000;
