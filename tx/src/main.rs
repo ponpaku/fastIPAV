@@ -147,6 +147,7 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         let mut last_audio_buffer = started;
         let mut video_total = 0_u64;
         let mut audio_total = 0_u64;
+        let mut qos_total = 0_u64;
         let mut video_ready = false;
         let mut audio_ready = !config.audio.enabled;
         let mut service_ready = false;
@@ -205,6 +206,16 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                             "audio stream stalled for more than {} ms",
                             config.recovery.media_timeout_ms
                         );
+                    }
+                }
+                changed = events.qos.changed() => {
+                    if changed.is_err() {
+                        break "QoS heartbeat channel closed".to_string();
+                    }
+                    let current = *events.qos.borrow_and_update();
+                    if current > qos_total {
+                        state.add_qos_events(current - qos_total).await;
+                        qos_total = current;
                     }
                 }
                 event = events.bus.recv() => {
@@ -327,13 +338,6 @@ async fn handle_tx_event(state: &SharedServiceState, event: &PipelineEvent) -> b
         PipelineEvent::Latency => {
             state
                 .add_note("tx pipeline requested latency recalculation")
-                .await;
-            false
-        }
-        PipelineEvent::Qos(source) => {
-            state.bump_qos_events().await;
-            state
-                .add_note(format!("tx pipeline QoS event from {source}"))
                 .await;
             false
         }
