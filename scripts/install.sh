@@ -466,8 +466,8 @@ fi
 
 log "installing binaries to ${PREFIX}/bin"
 as_root install -d -m 0755 "${PREFIX}/bin"
-TX_STAGED="${PREFIX}/bin/.tx.fastipav.new.$"
-RX_STAGED="${PREFIX}/bin/.rx.fastipav.new.$"
+TX_STAGED="${PREFIX}/bin/.tx.fastipav.new.${BASHPID}"
+RX_STAGED="${PREFIX}/bin/.rx.fastipav.new.${BASHPID}"
 as_root install -m 0755 "${PACKAGE_DIR}/bin/tx" "${TX_STAGED}"
 as_root install -m 0755 "${PACKAGE_DIR}/bin/rx" "${RX_STAGED}"
 as_root mv -f "${TX_STAGED}" "${PREFIX}/bin/tx"
