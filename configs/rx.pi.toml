@@ -32,7 +32,7 @@ decoder_element = "auto"
 renderer = "kms_drm"
 fullscreen = true
 sync = true
-max_lateness_ms = 25
+max_lateness_ms = -1
 
 [audio]
 enabled = false
