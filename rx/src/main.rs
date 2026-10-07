@@ -139,8 +139,17 @@ fn default_config_path() -> String {
 async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<()> {
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
+    let auto_decoder = matches!(
+        config.video.decoder_element.trim(),
+        "" | "auto" | "decodebin"
+    );
+    let mut force_software_decoder = false;
 
     loop {
+        let mut cycle_config = config.clone();
+        if auto_decoder && force_software_decoder {
+            cycle_config.video.decoder_element = "avdec_h264".to_string();
+        }
         let interface_name = match resolve_interface_name(config.network.interface_override()) {
             Ok(interface_name) => interface_name,
             Err(err) => {
@@ -166,7 +175,8 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         };
         state.set_interface(interface_name.clone()).await;
 
-        let mut pipeline = match GstServicePipeline::for_rx(&config, interface_name.as_deref()) {
+        let mut pipeline =
+            match GstServicePipeline::for_rx(&cycle_config, interface_name.as_deref()) {
             Ok(pipeline) => pipeline,
             Err(err) => {
                 let reason = format!("failed to construct rx pipeline: {err:#}");
@@ -188,6 +198,7 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                 continue;
             }
         };
+        let uses_v4l2_decoder = pipeline.descriptions().video.contains("v4l2h264dec");
         state
             .set_pipeline_descriptions(
                 pipeline.descriptions().video.clone(),
@@ -205,6 +216,12 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
             Ok(events) => events,
             Err(err) => {
                 let reason = format!("failed to start rx pipeline: {err:#}");
+                if auto_decoder && uses_v4l2_decoder {
+                    force_software_decoder = true;
+                    state
+                        .add_note("automatic V4L2 H.264 decoder failed to start; falling back to avdec_h264")
+                        .await;
+                }
                 let _ = pipeline.stop();
                 state.bump_pipeline_restarts().await;
                 state
@@ -367,6 +384,17 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                 }
             }
         };
+
+        if auto_decoder
+            && uses_v4l2_decoder
+            && !video_ready
+            && restart_reason.to_ascii_lowercase().contains("error")
+        {
+            force_software_decoder = true;
+            state
+                .add_note("automatic V4L2 H.264 decoder failed before first frame; falling back to avdec_h264")
+                .await;
+        }
 
         if let Err(err) = pipeline.stop() {
             error!("failed to stop rx pipeline before restart: {:?}", err);
