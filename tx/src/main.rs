@@ -114,6 +114,7 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             Ok(interface_name) => interface_name,
             Err(err) => {
                 let reason = format!("failed to resolve multicast interface: {err:#}");
+                state.set_interface(None).await;
                 state.bump_pipeline_restarts().await;
                 state.mark_failed(format!("tx startup retry: {reason}")).await;
                 warn!(
