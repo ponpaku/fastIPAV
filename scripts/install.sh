@@ -134,7 +134,9 @@ download_release_asset() {
   rm -f "${destination}"
   if command -v gh >/dev/null 2>&1; then
     log "curl download failed, trying gh release download"
-    gh release download "${VERSION}" -R "${REPO_SLUG}"       -D "$(dirname "${destination}")" -p "${asset_name}" ||
+    rm -f "${destination}"
+    gh release download "${VERSION}" -R "${REPO_SLUG}" \
+      -D "$(dirname "${destination}")" -p "${asset_name}" ||
       fail "failed to download release asset ${asset_name} with curl and gh"
   else
     fail "failed to download release asset ${asset_name}"
