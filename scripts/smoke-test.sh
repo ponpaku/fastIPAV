@@ -7,6 +7,7 @@ cd "${REPO_ROOT}"
 
 TX_BIN="${TX_BIN:-${REPO_ROOT}/target/debug/tx}"
 RX_BIN="${RX_BIN:-${REPO_ROOT}/target/debug/rx}"
+CONFIG_DIR="${CONFIG_DIR:-${REPO_ROOT}/configs}"
 TMP_DIR="$(mktemp -d)"
 TX_LOG="${TMP_DIR}/tx.log"
 RX_LOG="${TMP_DIR}/rx.log"
@@ -112,7 +113,7 @@ RETRY_CONFIG="${TMP_DIR}/tx.retry.toml"
 sed \
   -e 's/interface = "lo"/interface = "fastipav-missing0"/' \
   -e 's/port = 18081/port = 18083/' \
-  configs/tx.smoketest.toml >"${RETRY_CONFIG}"
+  "${CONFIG_DIR}/tx.smoketest.toml" >"${RETRY_CONFIG}"
 
 "${TX_BIN}" --config "${RETRY_CONFIG}" >"${TMP_DIR}/tx-retry.log" 2>&1 &
 retry_pid=$!
@@ -127,7 +128,7 @@ kill -TERM "${retry_pid}"
 wait "${retry_pid}"
 retry_pid=""
 
-"${RX_BIN}" --config configs/rx.smoketest.toml >"${RX_LOG}" 2>&1 &
+"${RX_BIN}" --config "${CONFIG_DIR}/rx.smoketest.toml" >"${RX_LOG}" 2>&1 &
 rx_pid=$!
 
 # Receiver must be allowed to wait longer than media_timeout_ms for a sender.
@@ -150,7 +151,7 @@ printf '%s' "${RX_WAIT_STATS}" | grep -q '"pipeline_restarts":0' || {
 # Once one expected stream arrives, the receiver must not wait forever for
 # the missing companion stream. Exercise video-only TX against audio-enabled RX.
 VIDEO_ONLY_CONFIG="${TMP_DIR}/tx.video-only.toml"
-sed 's/enabled = true/enabled = false/' configs/tx.smoketest.toml >"${VIDEO_ONLY_CONFIG}"
+sed 's/enabled = true/enabled = false/' "${CONFIG_DIR}/tx.smoketest.toml" >"${VIDEO_ONLY_CONFIG}"
 "${TX_BIN}" --config "${VIDEO_ONLY_CONFIG}" >"${TX_LOG}" 2>&1 &
 tx_pid=$!
 wait_for_health "tx-video-only" "http://127.0.0.1:18081/healthz" "${tx_pid}"
@@ -164,7 +165,7 @@ kill -TERM "${tx_pid}"
 wait "${tx_pid}"
 tx_pid=""
 
-"${TX_BIN}" --config configs/tx.smoketest.toml >"${TX_LOG}" 2>&1 &
+"${TX_BIN}" --config "${CONFIG_DIR}/tx.smoketest.toml" >"${TX_LOG}" 2>&1 &
 tx_pid=$!
 
 wait_for_health "tx" "http://127.0.0.1:18081/healthz" "${tx_pid}"
@@ -218,7 +219,7 @@ done
   exit 1
 }
 
-"${TX_BIN}" --config configs/tx.smoketest.toml >"${TX_LOG}" 2>&1 &
+"${TX_BIN}" --config "${CONFIG_DIR}/tx.smoketest.toml" >"${TX_LOG}" 2>&1 &
 tx_pid=$!
 wait_for_health "tx" "http://127.0.0.1:18081/healthz" "${tx_pid}"
 wait_for_health "rx" "http://127.0.0.1:18082/healthz" "${rx_pid}"
