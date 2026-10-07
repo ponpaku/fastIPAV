@@ -139,8 +139,8 @@ impl NetworkConfig {
         if audio_enabled && !(96..=127).contains(&self.audio_payload_type) {
             bail!("network.audio_payload_type must be a dynamic RTP payload type in 96..=127");
         }
-        if self.ttl > 255 {
-            bail!("network.ttl must be in 0..=255");
+        if !(1..=255).contains(&self.ttl) {
+            bail!("network.ttl must be in 1..=255");
         }
         if self.rtp_mtu < 28 {
             bail!("network.rtp_mtu must be at least 28 bytes");
@@ -881,6 +881,13 @@ mod tests {
         let mut config = TxConfig::default();
         config.audio.enabled = true;
         config.audio.sample_rate = (i32::MAX as u32) + 1;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_zero_multicast_ttl() {
+        let mut config = TxConfig::default();
+        config.network.ttl = 0;
         assert!(config.validate().is_err());
     }
 
