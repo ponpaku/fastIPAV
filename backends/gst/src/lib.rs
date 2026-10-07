@@ -463,6 +463,7 @@ fn select_h264_encoder(config: &TxConfig) -> (String, &'static str) {
             )
             && config.video.bitrate_kbps >= 25
             && config.video.bitrate_kbps.is_multiple_of(25)
+            && config.video.gop >= 2
             && has_element("v4l2h264enc")
         {
             let bitrate_bps = (config.video.bitrate_kbps as u64) * 1_000;
@@ -942,6 +943,15 @@ mod tests {
         let sink = render_linux_sink(LinuxSink::XImage, false, true, 25);
         assert!(sink.starts_with("ximagesink "));
         assert!(!sink.contains("fullscreen="));
+    }
+
+    #[test]
+    fn pi_auto_encoder_avoids_v4l2_for_single_frame_gop() {
+        let mut tx = TxConfig::default();
+        tx.platform.profile = PlatformProfile::RaspberryPi;
+        tx.video.gop = 1;
+        let (encoder, _) = select_h264_encoder(&tx);
+        assert!(encoder.starts_with("x264enc "));
     }
 
     #[test]
