@@ -41,13 +41,38 @@ pub fn resolve_interface_name(selection: Option<&str>) -> Result<Option<String>>
     candidates.sort();
     candidates.dedup();
 
-    match candidates.as_slice() {
-        [] => bail!(
+    choose_auto_interface(candidates).map(Some)
+}
+
+fn choose_auto_interface(candidates: Vec<String>) -> Result<String> {
+    if candidates.is_empty() {
+        bail!(
             "no active multicast-capable physical interface detected; set network.interface explicitly when using a non-physical interface"
-        ),
-        [only] => Ok(Some(only.clone())),
+        );
+    }
+
+    let non_wireless: Vec<&String> = candidates
+        .iter()
+        .filter(|name| !name.starts_with("wl"))
+        .collect();
+    match non_wireless.as_slice() {
+        [only] => return Ok((*only).clone()),
+        many if many.len() > 1 => {
+            bail!(
+                "multiple active wired/non-wireless multicast interfaces detected ({}); set network.interface explicitly",
+                many.iter()
+                    .map(|name| name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        _ => {}
+    }
+
+    match candidates.as_slice() {
+        [only] => Ok(only.clone()),
         _ => bail!(
-            "multiple active multicast interfaces detected ({}); set network.interface explicitly",
+            "multiple active wireless multicast interfaces detected ({}); set network.interface explicitly",
             candidates.join(", ")
         ),
     }
@@ -82,4 +107,37 @@ fn interface_supports_multicast(name: &str) -> bool {
 
 fn interface_is_physical(name: &str) -> bool {
     fs::metadata(format!("/sys/class/net/{}/device", name)).is_ok()
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    #[test]
+    fn auto_prefers_single_wired_interface_over_wifi() {
+        assert_eq!(
+            choose_auto_interface(names(&["eth0", "wlan0"])).unwrap(),
+            "eth0"
+        );
+    }
+
+    #[test]
+    fn auto_requires_explicit_choice_for_multiple_wired_interfaces() {
+        assert!(choose_auto_interface(names(&["enp1s0", "eth0", "wlan0"])).is_err());
+    }
+
+    #[test]
+    fn auto_uses_single_wifi_when_no_wired_interface_exists() {
+        assert_eq!(choose_auto_interface(names(&["wlan0"])).unwrap(), "wlan0");
+    }
+
+    #[test]
+    fn auto_requires_explicit_choice_for_multiple_wifi_interfaces() {
+        assert!(choose_auto_interface(names(&["wlan0", "wlan1"])).is_err());
+    }
 }
