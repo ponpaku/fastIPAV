@@ -17,8 +17,8 @@ use tracing::{error, info, warn};
     about = "Low-latency AV-over-IP receiver"
 )]
 struct Cli {
-    #[arg(short, long, default_value = "configs/rx.default.toml")]
-    config: String,
+    #[arg(short, long)]
+    config: Option<String>,
     #[arg(long)]
     interface: Option<String>,
     #[arg(long)]
@@ -42,7 +42,8 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     init_tracing(cli.verbose);
 
-    let mut config = RxConfig::load(&cli.config)?;
+    let config_path = cli.config.unwrap_or_else(default_config_path);
+    let mut config = RxConfig::load(&config_path)?;
     if let Some(interface) = cli.interface {
         config.network.interface = interface;
     }
@@ -123,6 +124,15 @@ async fn main() -> Result<()> {
                 Err(err) => Err(anyhow!("observability server task failed: {err}")),
             }
         }
+    }
+}
+
+fn default_config_path() -> String {
+    let installed = "/etc/avoverip/rx.toml";
+    if std::path::Path::new(installed).is_file() {
+        installed.to_string()
+    } else {
+        "configs/rx.default.toml".to_string()
     }
 }
 
