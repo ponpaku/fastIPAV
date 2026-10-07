@@ -235,9 +235,9 @@ impl SharedServiceState {
         self.stats.write().await.audio_underruns += 1;
     }
 
-    pub async fn bump_qos_events(&self) {
+    pub async fn add_qos_events(&self, delta: u64) {
         let mut stats = self.stats.write().await;
-        stats.qos_events = stats.qos_events.saturating_add(1);
+        stats.qos_events = stats.qos_events.saturating_add(delta);
     }
 
     pub async fn bump_pipeline_restarts(&self) {
