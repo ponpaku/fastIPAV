@@ -366,8 +366,8 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
     format!(
         concat!(
             "{source} ",
-            "! {source_caps}{source_decoder} ",
-            "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ",
+            "! {source_caps} ",
+            "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0{source_decoder} ",
             "! videoconvert ",
             "! video/x-raw,width={width},height={height},framerate={fps}/1{encoder_input_caps} ",
             "! {encoder} ",
