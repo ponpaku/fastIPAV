@@ -221,10 +221,15 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
             Ok(events) => events,
             Err(err) => {
                 let reason = format!("failed to start rx pipeline: {err:#}");
-                if auto_decoder && uses_v4l2_decoder {
+                if auto_decoder
+                    && uses_v4l2_decoder
+                    && reason.to_ascii_lowercase().contains("v4l2h264dec")
+                {
                     force_software_decoder = true;
                     state
-                        .add_note("automatic V4L2 H.264 decoder failed to start; falling back to avdec_h264")
+                        .add_note(
+                            "automatic V4L2 H.264 decoder failed to start; falling back to avdec_h264",
+                        )
                         .await;
                 }
                 let _ = pipeline.stop();
@@ -444,8 +449,7 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         let restart_reason_lower = restart_reason.to_ascii_lowercase();
         if auto_decoder
             && uses_v4l2_decoder
-            && ((!video_ready && restart_reason_lower.contains("error"))
-                || restart_reason_lower.contains("v4l2h264dec")
+            && (restart_reason_lower.contains("v4l2h264dec")
                 || restart_reason_lower.contains("decoder produced no frames"))
         {
             force_software_decoder = true;
