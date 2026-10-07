@@ -7,7 +7,7 @@
 
 - Raspberry Pi: `Raspberry Pi OS Bookworm 64bit`
 - Linux PC: `Ubuntu 22.04 LTS` 以降
-  - CI は Ubuntu 22.04 / 24.04 x86_64 と Ubuntu 22.04 arm64 で確認する
+  - CI は Ubuntu 22.04 / 24.04 x86_64、Ubuntu 22.04 arm64、Debian 12 arm64 で確認する
 
 ## 配布方針
 
@@ -224,6 +224,8 @@ bash scripts/smoke-test.sh
 
 設定ファイルは起動時に検証される。multicast address、RTP port / payload type、映像サイズ・fps、HTTP bind、audio parameter などが不正な場合は pipeline 構築前にエラーで終了する。
 
+install/upgrade時は新しい `tx` / `rx` の `--check-config` で、保持中の実運用TOMLとGStreamer pipelineのparse可否を先に検証してからbinaryを置き換える。
+
 `/stats` の主な項目:
 
 - `estimated_capture_to_display_ms`
@@ -298,8 +300,9 @@ Pull Request と `main` への push では、GitHub Actions で以下を実行�
 - `cargo fmt --check` / `clippy -D warnings`
 - workspace 全体の `cargo check`
 - unit test（配布する全TOMLとproduction sink/pipelineのparse検証を含む）
-- GStreamer を使った tx/rx loopback smoke test（映像・音声の実buffer通過を確認）
-- Ubuntu 22.04 x86_64 / arm64 でrelease package生成・checksum・manifest・local install検証
+- GStreamer を使った tx/rx loopback smoke test（映像・音声の実buffer通過、TX停止時のRX stall検出/再起動/復旧を確認）
+- TX startup failureがHTTP監視を維持したまま再試行されること、RXが送信機offline中に無駄な再起動をしないことを確認
+- Ubuntu 22.04 x86_64 / arm64 と Debian 12 arm64 でrelease package生成・checksum・manifest・local install検証
 
 ## License
 
