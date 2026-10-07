@@ -6,7 +6,6 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=avoverip
-Group=avoverip
 SupplementaryGroups=video audio
 ExecStart=/usr/local/bin/rx --config /etc/avoverip/rx.toml
 Restart=on-failure
