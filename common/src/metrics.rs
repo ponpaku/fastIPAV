@@ -35,6 +35,7 @@ pub struct StatsSnapshot {
     pub audio_chunks_total: u64,
     pub dropped_audio_chunks: u64,
     pub audio_underruns: u64,
+    pub qos_events: u64,
     pub estimated_capture_to_display_ms: Option<f64>,
     pub estimated_av_sync_ms: Option<f64>,
     pub estimated_audio_offset_ms: Option<f64>,
@@ -88,6 +89,7 @@ impl SharedServiceState {
                 audio_chunks_total: 0,
                 dropped_audio_chunks: 0,
                 audio_underruns: 0,
+                qos_events: 0,
                 estimated_capture_to_display_ms: None,
                 estimated_av_sync_ms: None,
                 estimated_audio_offset_ms: None,
@@ -231,6 +233,11 @@ impl SharedServiceState {
 
     pub async fn bump_audio_underruns(&self) {
         self.stats.write().await.audio_underruns += 1;
+    }
+
+    pub async fn bump_qos_events(&self) {
+        let mut stats = self.stats.write().await;
+        stats.qos_events = stats.qos_events.saturating_add(1);
     }
 
     pub async fn bump_pipeline_restarts(&self) {
