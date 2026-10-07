@@ -64,6 +64,13 @@ need_cmd install
 need_cmd tar
 need_cmd sha256sum
 
+[ -f rust-toolchain.toml ] || fail "rust-toolchain.toml is missing"
+PINNED_RUST="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml | head -n1)"
+[ -n "${PINNED_RUST}" ] || fail "failed to read pinned Rust version"
+ACTIVE_RUST="$(rustc --version | cut -d' ' -f2)"
+[ "${ACTIVE_RUST}" = "${PINNED_RUST}" ] ||
+  fail "rustc ${ACTIVE_RUST} does not match pinned release toolchain ${PINNED_RUST}"
+
 [ -n "${VERSION}" ] || fail "--version is required"
 printf '%s\n' "${VERSION}" |
   grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' ||
