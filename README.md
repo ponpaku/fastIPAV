@@ -242,6 +242,8 @@ install/upgrade時は新しい `tx` / `rx` の `--check-config` で、保持中�
 - `dropped_frames`
 - `dropped_audio_chunks`
 
+`qos_events` はGStreamer QoS messageの発生数。`dropped_frames` / `dropped_audio_chunks` はwarning文言から分類した診断カウンタであり、厳密なRTP packet loss数やsinkの累積drop統計ではない。
+
 ## release 生成
 
 `v*` タグを push すると GitHub Actions が x86_64 / aarch64 のネイティブ runner で release package を生成し、GitHub Release に `.tar.gz` と `.sha256` を公開する。
