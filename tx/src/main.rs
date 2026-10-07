@@ -11,11 +11,7 @@ use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 #[derive(Debug, Parser)]
-#[command(
-    name = "tx",
-    version,
-    about = "Low-latency AV-over-IP transmitter"
-)]
+#[command(name = "tx", version, about = "Low-latency AV-over-IP transmitter")]
 struct Cli {
     #[arg(short, long)]
     config: Option<String>,
