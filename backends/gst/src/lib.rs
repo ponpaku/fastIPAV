@@ -392,6 +392,7 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
             "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0{source_decoder} ",
             "! videoconvert ",
             "! video/x-raw,width={width},height={height},framerate={fps}/1{encoder_input_caps} ",
+            "! identity name=video_ingress_monitor silent=true ",
             "! {encoder} ",
             "! h264parse config-interval=-1 ",
             "! video/x-h264,stream-format=byte-stream,alignment=au ",
@@ -513,6 +514,7 @@ fn tx_audio_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
         concat!(
             "{source} ",
             "! queue leaky=downstream max-size-buffers=8 max-size-bytes=0 max-size-time=0 ",
+            "! identity name=audio_ingress_monitor silent=true ",
             "! audioconvert ",
             "! audioresample ",
             "! audio/x-raw,format=S16BE,layout=interleaved,rate={sample_rate},channels={channels} ",
