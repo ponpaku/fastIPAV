@@ -115,8 +115,15 @@ fn default_config_path() -> String {
 async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<()> {
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
+    let auto_encoder = matches!(config.video.encoder_element.trim(), "" | "auto");
+    let mut force_software_encoder = false;
 
     loop {
+        let mut cycle_config = config.clone();
+        if auto_encoder && force_software_encoder {
+            cycle_config.video.encoder_element =
+                "x264enc tune=zerolatency speed-preset=ultrafast".to_string();
+        }
         let interface_name = match resolve_interface_name(config.network.interface_override()) {
             Ok(interface_name) => interface_name,
             Err(err) => {
@@ -142,7 +149,8 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         };
         state.set_interface(interface_name.clone()).await;
 
-        let mut pipeline = match GstServicePipeline::for_tx(&config, interface_name.as_deref()) {
+        let mut pipeline =
+            match GstServicePipeline::for_tx(&cycle_config, interface_name.as_deref()) {
             Ok(pipeline) => pipeline,
             Err(err) => {
                 let reason = format!("failed to construct tx pipeline: {err:#}");
@@ -164,6 +172,7 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                 continue;
             }
         };
+        let uses_v4l2_encoder = pipeline.descriptions().video.contains("v4l2h264enc");
         state
             .set_pipeline_descriptions(
                 pipeline.descriptions().video.clone(),
@@ -177,6 +186,12 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             Ok(events) => events,
             Err(err) => {
                 let reason = format!("failed to start tx pipeline: {err:#}");
+                if auto_encoder && uses_v4l2_encoder {
+                    force_software_encoder = true;
+                    state
+                        .add_note("automatic V4L2 H.264 encoder failed to start; falling back to x264")
+                        .await;
+                }
                 let _ = pipeline.stop();
                 state.bump_pipeline_restarts().await;
                 state
@@ -348,6 +363,17 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                 }
             }
         };
+
+        if auto_encoder
+            && uses_v4l2_encoder
+            && !video_ready
+            && restart_reason.starts_with("no video buffers received")
+        {
+            force_software_encoder = true;
+            state
+                .add_note("automatic V4L2 H.264 encoder produced no video; falling back to x264")
+                .await;
+        }
 
         if let Err(err) = pipeline.stop() {
             error!("failed to stop tx pipeline before restart: {:?}", err);
