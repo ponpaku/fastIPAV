@@ -21,7 +21,6 @@ pub enum PipelineEvent {
     Eos,
     ClockLost,
     Latency,
-    Qos(String),
     AudioUnderrun,
 }
 
@@ -34,7 +33,6 @@ impl PipelineEvent {
             Self::Eos => "pipeline reached EOS".to_string(),
             Self::ClockLost => "pipeline lost its clock".to_string(),
             Self::Latency => "pipeline posted latency recalculation".to_string(),
-            Self::Qos(source) => format!("pipeline QoS event from {source}"),
             Self::AudioUnderrun => "audio underrun detected".to_string(),
         }
     }
@@ -62,6 +60,7 @@ pub struct PipelineEvents {
     pub bus: mpsc::UnboundedReceiver<PipelineEvent>,
     pub video: watch::Receiver<MediaHeartbeat>,
     pub audio: watch::Receiver<MediaHeartbeat>,
+    pub qos: watch::Receiver<u64>,
     _audio_guard: Option<watch::Sender<MediaHeartbeat>>,
 }
 
@@ -103,6 +102,7 @@ impl GstServicePipeline {
         };
         let (video_tx, video_rx) = watch::channel(initial_heartbeat);
         let (audio_tx, audio_rx) = watch::channel(initial_heartbeat);
+        let (qos_tx, qos_rx) = watch::channel(0_u64);
         self.install_buffer_probe("video_monitor", video_tx)?;
         let audio_guard = if self.descriptions.audio.is_some() {
             self.install_buffer_probe("audio_monitor", audio_tx)?;
@@ -120,6 +120,7 @@ impl GstServicePipeline {
         let pipeline = self.pipeline.clone();
         let bus_poll_interval_ms = self.bus_poll_interval_ms.max(1);
         let bus_thread = thread::spawn(move || {
+            let mut qos_total = 0_u64;
             while !stop_flag.load(Ordering::Relaxed) {
                 let Some(message) =
                     bus.timed_pop(gst::ClockTime::from_mseconds(bus_poll_interval_ms))
@@ -169,7 +170,9 @@ impl GstServicePipeline {
                         }
                     }
                     gst::MessageView::Qos(..) => {
-                        Some(PipelineEvent::Qos(source_name(&message)))
+                        qos_total = qos_total.saturating_add(1);
+                        qos_tx.send_replace(qos_total);
+                        None
                     }
                     gst::MessageView::Element(element) => {
                         if let Some(structure) = element.structure() {
@@ -205,6 +208,7 @@ impl GstServicePipeline {
             bus: bus_rx,
             video: video_rx,
             audio: audio_rx,
+            qos: qos_rx,
             _audio_guard: audio_guard,
         })
     }
