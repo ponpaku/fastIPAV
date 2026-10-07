@@ -619,13 +619,9 @@ async fn handle_rx_event(state: &SharedServiceState, event: &PipelineEvent) -> b
 }
 
 async fn seed_estimated_metrics(config: &RxConfig, state: &SharedServiceState) {
-    let frame_interval_ms = 1000.0 / config.video.fps.max(1) as f64;
-    let renderer_budget_ms = match config.video.renderer.resolve(&config.platform.profile) {
-        RendererKind::KmsDrm => 4.0,
-        _ => 8.0,
-    };
-    let estimate = config.video.jitter_latency_ms as f64 + frame_interval_ms + renderer_budget_ms;
-    state.set_latency(estimate).await;
+    state
+        .add_note("capture-to-display latency is not reported until an end-to-end measurement probe exists")
+        .await;
     if config.audio.enabled {
         let audio_offset =
             config.audio.jitter_latency_ms as f64 - config.video.jitter_latency_ms as f64;
@@ -641,10 +637,6 @@ async fn seed_estimated_metrics(config: &RxConfig, state: &SharedServiceState) {
         }
         state
             .add_note("A/V offset is a configuration-based estimate; independent RTP streams are not sender-clock synchronized")
-            .await;
-    } else {
-        state
-            .add_note("capture-to-display estimate is seeded from configured video jitter buffer and frame interval")
             .await;
     }
 }
