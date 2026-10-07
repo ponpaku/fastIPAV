@@ -305,7 +305,23 @@ else
 fi
 
 verify_package "${PACKAGE_PATH}" "${CHECKSUM_PATH}"
-tar -xzf "${PACKAGE_PATH}" -C "${TMP_DIR}"
+
+while IFS= read -r entry; do
+  case "${entry}" in
+    "${PACKAGE_BASENAME}"|"${PACKAGE_BASENAME}/"*) ;;
+    *) fail "release archive contains unexpected path: ${entry}" ;;
+  esac
+  case "/${entry}/" in
+    *"/../"*|*"/./"*) fail "release archive contains unsafe path: ${entry}" ;;
+  esac
+done < <(tar -tzf "${PACKAGE_PATH}")
+
+tar -tvzf "${PACKAGE_PATH}" | awk '
+  $1 !~ /^[d-]/ { bad = 1 }
+  END { exit bad }
+' || fail "release archive contains links or special file entries"
+
+tar --no-same-owner --no-same-permissions -xzf "${PACKAGE_PATH}" -C "${TMP_DIR}"
 
 PACKAGE_DIR="${TMP_DIR}/${PACKAGE_BASENAME}"
 [ -d "${PACKAGE_DIR}" ] ||
