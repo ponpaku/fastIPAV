@@ -216,7 +216,10 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
             Ok(events) => events,
             Err(err) => {
                 let reason = format!("failed to start rx pipeline: {err:#}");
-                if auto_decoder && uses_v4l2_decoder {
+                if auto_decoder
+                    && uses_v4l2_decoder
+                    && reason.to_ascii_lowercase().contains("v4l2h264dec")
+                {
                     force_software_decoder = true;
                     state
                         .add_note(
