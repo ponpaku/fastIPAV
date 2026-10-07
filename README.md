@@ -142,12 +142,20 @@ gst-inspect-1.0 waylandsink
 
 補足:
 
-- `renderer = "auto"` はdisplay sessionに応じて `waylandsink` → `sdlvideosink` → `ximagesink` を選び、適合するsinkが無い場合のみ `autovideosink` を使う。明示 `renderer = "sdl"` は `sdlvideosink` を固定指定する
+- `renderer = "auto"` はdisplay sessionに応じて `waylandsink` → `sdlvideosink` → `ximagesink` を優先し、明示的なvideo sinkが使えない環境では起動失敗として扱う。`autovideosink` のfake-sink fallbackは使わない。明示 `renderer = "sdl"` は `sdlvideosink` を固定指定する
 - UVC 入力が見えているかは `ls -l /dev/video*` で確認する
 - 音声入出力は `arecord -l` `aplay -l` で確認する
 - TX audioは既定でALSA driver timestampではなくpipeline clockを使い、videoの`do-timestamp=true`と同じclock domainへ寄せる
 
 ## 起動例
+
+installerがsystemd unitを配置する場合、実運用configは `root:avoverip` / `0640` にする。一般ユーザーが `/etc/avoverip/*.toml` を直接使って手動起動する場合は、そのユーザーを `avoverip` groupへ追加して再ログインする:
+
+```bash
+sudo usermod -aG avoverip "$USER"
+```
+
+capture/audio deviceも手動ユーザーから使う場合は、環境に応じて `video` / `audio` group権限も必要。
 
 送信の基本起動:
 
