@@ -211,16 +211,18 @@ impl SharedServiceState {
         stats.audio_pipeline = audio_pipeline;
     }
 
-    pub async fn bump_frames_total(&self) {
-        self.stats.write().await.frames_total += 1;
+    pub async fn add_frames_total(&self, delta: u64) {
+        self.stats.write().await.frames_total =
+            self.stats.read().await.frames_total.saturating_add(delta);
     }
 
     pub async fn bump_dropped_frames(&self) {
         self.stats.write().await.dropped_frames += 1;
     }
 
-    pub async fn bump_audio_chunks_total(&self) {
-        self.stats.write().await.audio_chunks_total += 1;
+    pub async fn add_audio_chunks_total(&self, delta: u64) {
+        self.stats.write().await.audio_chunks_total =
+            self.stats.read().await.audio_chunks_total.saturating_add(delta);
     }
 
     pub async fn bump_dropped_audio_chunks(&self) {
