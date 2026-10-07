@@ -751,7 +751,7 @@ fn default_audio_latency_time_us() -> i64 {
 }
 
 fn default_use_driver_timestamps() -> bool {
-    true
+    false
 }
 
 #[cfg(test)]
