@@ -207,11 +207,18 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" dist/*
+            is_draft="$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq '.isDraft')"
+            if [ "${is_draft}" != "true" ]; then
+              echo "release ${GITHUB_REF_NAME} is already published; leaving immutable assets unchanged"
+              exit 0
+            fi
           else
-            release_flags=(--verify-tag --generate-notes)
+            release_flags=(--draft --verify-tag --generate-notes)
             case "${GITHUB_REF_NAME}" in
               *-*) release_flags+=(--prerelease) ;;
             esac
-            gh release create "${GITHUB_REF_NAME}" dist/* "${release_flags[@]}"
+            gh release create "${GITHUB_REF_NAME}" "${release_flags[@]}"
           fi
+
+          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+          gh release edit "${GITHUB_REF_NAME}" --draft=false
