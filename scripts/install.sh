@@ -152,13 +152,22 @@ verify_package() {
   local nonempty_lines
 
   nonempty_lines="$(awk 'NF { count++ } END { print count + 0 }' "${checksum_path}")"
-  [ "${nonempty_lines}" -eq 1 ] || fail "checksum file must contain exactly one entry: ${checksum_path}"
+  [ "${nonempty_lines}" -eq 1 ] ||
+    fail "checksum file must contain exactly one entry: ${checksum_path}"
 
   expected="$(awk 'NF { print $1 }' "${checksum_path}")"
   checksum_file="$(awk 'NF { print $2 }' "${checksum_path}")"
   checksum_file="${checksum_file#\*}"
-  printf '%s\n' "${expected}" | grep -Eq '^[0-9a-fA-F]{64}
+  printf '%s\n' "${expected}" | grep -Eq '^[0-9a-fA-F]{64}$' ||
+    fail "invalid checksum file: ${checksum_path}"
+  [ "${checksum_file}" = "$(basename "${package_path}")" ] ||
+    fail "checksum filename mismatch: expected $(basename "${package_path}"), got ${checksum_file:-<empty>}"
 
+  actual="$(sha256sum "${package_path}" | awk '{ print $1 }')"
+  [ "${actual}" = "${expected}" ] ||
+    fail "checksum verification failed for ${package_path}"
+  log "checksum verified for $(basename "${package_path}")"
+}
 install_deps() {
   log "installing runtime dependencies"
   as_root apt-get update
