@@ -169,6 +169,7 @@ jobs:
 
           if [ "${{ matrix.name }}" = "ubuntu-22.04-x86_64" ]; then
             system_install_root="$(mktemp -d)"
+            chmod 0755 "${system_install_root}"
             bash scripts/install.sh \
               --version "${release_tag}" \
               --local-dist \
