@@ -187,6 +187,10 @@ jobs:
           "${package_dir}/bin/rx" --version
           "${package_dir}/bin/tx" --config "${package_dir}/configs/tx.default.toml" --check-config
           "${package_dir}/bin/rx" --config "${package_dir}/configs/rx.default.toml" --check-config
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            "${package_dir}/bin/tx" --config "${package_dir}/configs/tx.pi.toml" --check-config
+            "${package_dir}/bin/rx" --config "${package_dir}/configs/rx.pi.toml" --check-config
+          fi
 
           TX_BIN="${package_dir}/bin/tx" \
           RX_BIN="${package_dir}/bin/rx" \
