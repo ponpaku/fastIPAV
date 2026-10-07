@@ -212,8 +212,8 @@ impl SharedServiceState {
     }
 
     pub async fn add_frames_total(&self, delta: u64) {
-        self.stats.write().await.frames_total =
-            self.stats.read().await.frames_total.saturating_add(delta);
+        let mut stats = self.stats.write().await;
+        stats.frames_total = stats.frames_total.saturating_add(delta);
     }
 
     pub async fn bump_dropped_frames(&self) {
@@ -221,8 +221,8 @@ impl SharedServiceState {
     }
 
     pub async fn add_audio_chunks_total(&self, delta: u64) {
-        self.stats.write().await.audio_chunks_total =
-            self.stats.read().await.audio_chunks_total.saturating_add(delta);
+        let mut stats = self.stats.write().await;
+        stats.audio_chunks_total = stats.audio_chunks_total.saturating_add(delta);
     }
 
     pub async fn bump_dropped_audio_chunks(&self) {
