@@ -426,8 +426,11 @@ as_root "${PACKAGE_DIR}/bin/rx" --config "${RX_CONFIG_TO_CHECK}" --check-config 
 
 log "installing binaries to ${PREFIX}/bin"
 as_root install -d "${PREFIX}/bin"
-as_root install -m 0755 "${PACKAGE_DIR}/bin/tx" "${PREFIX}/bin/tx"
-as_root install -m 0755 "${PACKAGE_DIR}/bin/rx" "${PREFIX}/bin/rx"
+for role in tx rx; do
+  staged="${PREFIX}/bin/.${role}.fastipav.new.$"
+  as_root install -m 0755 "${PACKAGE_DIR}/bin/${role}" "${staged}"
+  as_root mv -f "${staged}" "${PREFIX}/bin/${role}"
+done
 
 log "installing shared assets to ${SHARE_DIR}"
 as_root install -d "${SHARE_DIR}/configs" "${SHARE_DIR}/systemd"
