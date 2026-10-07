@@ -60,6 +60,8 @@ need_cmd rustc
 need_cmd grep
 need_cmd cut
 need_cmd sed
+need_cmd git
+need_cmd gzip
 need_cmd install
 need_cmd tar
 need_cmd sha256sum
@@ -144,8 +146,26 @@ ARCHIVE_PATH="dist/${PACKAGE_BASENAME}.tar.gz"
 CHECKSUM_PATH="dist/${PACKAGE_BASENAME}.sha256"
 rm -f "${ARCHIVE_PATH}" "${CHECKSUM_PATH}"
 
-log "creating ${ARCHIVE_PATH}"
-tar -C "${STAGE_DIR}" -czf "${ARCHIVE_PATH}" "${PACKAGE_BASENAME}"
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct HEAD)}"
+printf '%s\n' "${SOURCE_DATE_EPOCH}" | grep -Eq '^[0-9]+
+  sha256sum "${PACKAGE_BASENAME}.tar.gz" >"${PACKAGE_BASENAME}.sha256"
+)
+[ -s "${CHECKSUM_PATH}" ] || fail "failed to create checksum"
+log "wrote checksum ${CHECKSUM_PATH}"
+log "package created: ${ARCHIVE_PATH}"
+ ||
+  fail "SOURCE_DATE_EPOCH must be an integer Unix timestamp"
+
+log "creating deterministic ${ARCHIVE_PATH}"
+tar \
+  --sort=name \
+  --mtime="@${SOURCE_DATE_EPOCH}" \
+  --owner=0 \
+  --group=0 \
+  --numeric-owner \
+  -C "${STAGE_DIR}" \
+  -cf - "${PACKAGE_BASENAME}" |
+  gzip -n >"${ARCHIVE_PATH}"
 
 (
   cd dist
