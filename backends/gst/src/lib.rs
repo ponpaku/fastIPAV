@@ -404,7 +404,7 @@ fn select_h264_encoder(config: &TxConfig) -> (String, &'static str) {
             let bitrate_bps = (config.video.bitrate_kbps as u64) * 1_000;
             return (
                 format!(
-                    "v4l2h264enc extra-controls=\"controls,repeat_sequence_header=1,video_bitrate={},h264_i_frame_period={}\"",
+                    "v4l2h264enc extra-controls=\"controls,repeat_sequence_header=1,video_bitrate={},h264_i_frame_period={}\" ! video/x-h264,level=(string)4",
                     bitrate_bps, config.video.gop
                 ),
                 ",format=NV12",
