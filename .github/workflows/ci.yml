@@ -149,4 +149,5 @@ jobs:
           PATH=/usr/bin:/bin \
           TX_BIN="${install_root}/usr/local/bin/tx" \
           RX_BIN="${install_root}/usr/local/bin/rx" \
+          CONFIG_DIR="${install_root}/usr/local/share/fastipav/configs" \
             bash scripts/smoke-test.sh
