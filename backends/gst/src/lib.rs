@@ -285,6 +285,19 @@ impl GstServicePipeline {
     }
 }
 
+impl Drop for GstServicePipeline {
+    fn drop(&mut self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+        if let Some(bus) = self.pipeline.bus() {
+            bus.set_flushing(true);
+        }
+        if let Some(bus_thread) = self.bus_thread.take() {
+            let _ = bus_thread.join();
+        }
+        let _ = self.pipeline.set_state(gst::State::Null);
+    }
+}
+
 fn init_gstreamer() -> Result<()> {
     gst::init().context("failed to initialize gstreamer")
 }
