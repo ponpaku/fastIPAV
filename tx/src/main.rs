@@ -159,7 +159,9 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                 if auto_encoder && !force_software_encoder {
                     force_software_encoder = true;
                     state
-                        .add_note("automatic codec pipeline failed to construct; retrying with x264")
+                        .add_note(
+                            "automatic codec pipeline failed to construct; retrying with x264",
+                        )
                         .await;
                 }
                 state.bump_pipeline_restarts().await;
