@@ -356,6 +356,30 @@ if [ -z "${RX_RESTARTS_AFTER:-}" ] ||
   exit 1
 fi
 
+# Once the established stream is lost, the first restart is expected.
+# A fully offline transmitter must not cause an endless RX restart loop.
+# Wait beyond the configured 5000 ms media timeout before restoring TX.
+sleep 7
+if ! kill -0 "${rx_pid}" 2>/dev/null; then
+  printf '[smoke-test] rx exited while TX stayed offline after a restart\n' >&2
+  exit 1
+fi
+RX_OFFLINE_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' \
+  "http://127.0.0.1:18082/healthz" 2>/dev/null || true)"
+if [ "${RX_OFFLINE_STATUS}" != "503" ]; then
+  printf '[smoke-test] rx did not remain unhealthy after prolonged TX outage\n' >&2
+  exit 1
+fi
+RX_OFFLINE_STATS="$(curl -fsS "http://127.0.0.1:18082/stats")"
+RX_RESTARTS_OFFLINE="$(json_u64_field "${RX_OFFLINE_STATS}" pipeline_restarts)"
+if [ -z "${RX_RESTARTS_OFFLINE}" ] ||
+  [ "${RX_RESTARTS_OFFLINE}" -ne "${RX_RESTARTS_AFTER}" ]; then
+  printf '[smoke-test] rx repeatedly restarted while TX remained offline (%s -> %s)\n' \
+    "${RX_RESTARTS_AFTER}" "${RX_RESTARTS_OFFLINE:-unknown}" >&2
+  exit 1
+fi
+printf '[smoke-test] rx remained alive without repeated restarts through long TX outage\n'
+
 "${TX_BIN}" --config "${CONFIG_DIR}/tx.smoketest.toml" >"${TX_LOG}" 2>&1 &
 tx_pid=$!
 wait_for_health "tx" "http://127.0.0.1:18081/healthz" "${tx_pid}"
