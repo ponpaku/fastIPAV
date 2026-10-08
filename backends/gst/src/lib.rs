@@ -700,16 +700,6 @@ fn rx_video_branch(
         config.network.video_payload_type
     );
     let decoder = select_h264_decoder(config);
-    // rtph264depay already negotiates AU-aligned byte-stream H.264, which
-    // avdec_h264 accepts directly. Preserve parsing for V4L2, OpenH264,
-    // decodebin and compound/custom decoder fragments.
-    let direct_avdec_h264 =
-        decoder.split_whitespace().next() == Some("avdec_h264") && !decoder.contains('!');
-    let h264_parser = if direct_avdec_h264 {
-        ""
-    } else {
-        "h264parse ! "
-    };
     let sink = if config.video.sink_element.trim().is_empty() {
         render_sink(
             renderer,
@@ -748,7 +738,8 @@ fn rx_video_branch(
             "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
             "! rtph264depay wait-for-keyframe=true ",
             "! video/x-h264,stream-format=byte-stream,alignment=au ",
-            "! {h264_parser}{decoder}{post_decode} ",
+            "! h264parse ",
+            "! {decoder}{post_decode} ",
             "! identity name=video_codec_monitor silent=true ",
             "! queue leaky=downstream max-size-buffers=1 max-size-bytes=0 max-size-time=0 ",
             "! identity name=video_monitor silent=true ",
@@ -762,7 +753,6 @@ fn rx_video_branch(
         latency_ms = config.video.jitter_latency_ms,
         mtu = config.network.rtp_mtu,
         decoder = decoder,
-        h264_parser = h264_parser,
         post_decode = post_decode,
         sink = sink,
     );
@@ -1119,6 +1109,7 @@ mod tests {
 
     #[test]
     fn low_latency_avdec_decoder_keeps_slice_threading_and_custom_choices() {
+        init_gstreamer().unwrap();
         let mut rx = RxConfig::default();
         rx.platform.profile = PlatformProfile::LinuxPc;
         let automatically_selected = select_h264_decoder(&rx);
@@ -1138,28 +1129,14 @@ mod tests {
     }
 
     #[test]
-    fn software_h264_receive_path_skips_parser_but_hardware_keeps_it() {
+    fn rtp_h264_parser_is_required_for_runtime_negotiation() {
         let mut rx = RxConfig::default();
-        rx.video.decoder_element = LOW_LATENCY_AVDEC_H264.to_string();
-        let (software, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
-        assert!(software.contains(
-            "! video/x-h264,stream-format=byte-stream,alignment=au ! avdec_h264 thread-type=slice"
-        ));
-        assert!(!software.contains("! h264parse "));
-        assert_pipeline_parses(&software);
-
-        rx.video.decoder_element = "avdec_h264".into();
-        let (legacy_software, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
-        assert!(!legacy_software.contains("! h264parse "));
-        assert_pipeline_parses(&legacy_software);
-
-        rx.video.decoder_element = "v4l2h264dec".into();
-        let (hardware, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
-        assert!(hardware.contains("! h264parse ! v4l2h264dec"));
-
-        rx.video.decoder_element = "avdec_h264 ! identity".into();
-        let (custom, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
-        assert!(custom.contains("! h264parse ! avdec_h264 ! identity"));
+        for decoder in [LOW_LATENCY_AVDEC_H264, "avdec_h264", "v4l2h264dec"] {
+            rx.video.decoder_element = decoder.to_string();
+            let (branch, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
+            assert!(branch.contains("! h264parse ! "));
+            assert_pipeline_parses(&branch);
+        }
     }
 
     #[test]
