@@ -627,7 +627,7 @@ fn rx_video_branch(
     };
     let renderer_name = pipeline_shape(&sink)
         .split(" ! ")
-        .next_back()
+        .last()
         .unwrap_or("unknown")
         .to_string();
     let pipeline = format!(
@@ -963,9 +963,9 @@ mod tests {
 
     #[test]
     fn h264_level_4_limits_cover_1080p30_but_not_1080p60() {
-        assert!(fits_h264_level_4(1920, 1080, 30, 8_000));
-        assert!(!fits_h264_level_4(1920, 1080, 60, 8_000));
-        assert!(!fits_h264_level_4(1920, 1080, 30, 25_000));
+        assert_eq!(pi_v4l2_h264_level(1920, 1080, 30, 8_000), Some("4"));
+        assert_eq!(pi_v4l2_h264_level(1920, 1080, 60, 8_000), None);
+        assert_eq!(pi_v4l2_h264_level(1920, 1080, 30, 25_000), None);
     }
 
     #[test]
