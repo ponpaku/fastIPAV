@@ -31,7 +31,8 @@ jitter_latency_ms = 20
 decoder_element = "avdec_h264"
 renderer = "auto"
 fullscreen = false
-sync = true
+# Lowest-latency video projection: render decoded frames without clock waiting.
+sync = false
 max_lateness_ms = -1
 
 [audio]
