@@ -124,6 +124,9 @@ impl NetworkConfig {
         if !multicast_group.is_multicast() {
             bail!("network.multicast_group must be an IPv4 multicast address");
         }
+        if let Some(interface) = self.interface_override() {
+            crate::net::validate_interface_name(interface)?;
+        }
         if self.video_port == 0 {
             bail!("network.video_port must be greater than zero");
         }
@@ -886,6 +889,26 @@ mod tests {
             port: 8080,
         };
         assert_eq!(config.socket_addr().unwrap().to_string(), "[::1]:8080");
+    }
+
+    #[test]
+    fn rejects_invalid_interface_names_in_tx_and_rx_configs() {
+        for invalid in ["eth0/../lo", "..", "some interface", "0123456789abcdef"] {
+            let mut tx = TxConfig::default();
+            tx.network.interface = invalid.to_string();
+            assert!(tx.validate().is_err(), "TX accepted {invalid:?}");
+
+            let mut rx = RxConfig::default();
+            rx.network.interface = invalid.to_string();
+            assert!(rx.validate().is_err(), "RX accepted {invalid:?}");
+        }
+    }
+
+    #[test]
+    fn vlan_interface_name_is_accepted_during_config_validation() {
+        let mut config = TxConfig::default();
+        config.network.interface = "eth0.100".to_string();
+        assert!(config.validate().is_ok());
     }
 
     #[test]
