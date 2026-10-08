@@ -108,6 +108,22 @@ jobs:
           bash -n scripts/*.sh tools/*.sh
           shellcheck scripts/*.sh tools/*.sh
 
+      - name: Local installer does not require curl
+        run: |
+          offline_path="$(mktemp -d)"
+          trap 'rm -rf "${offline_path}"' EXIT
+          for utility in dirname uname grep tar install awk sed sha256sum mktemp rm tr; do
+            ln -s "$(command -v "${utility}")" "${offline_path}/${utility}"
+          done
+          test ! -e "${offline_path}/curl"
+          # Fail on the deliberately absent package, not on a missing curl tool.
+          if output="$(PATH="${offline_path}" /bin/bash scripts/install.sh \
+              --local-dist --version v999.999.999 2>&1)"; then
+            echo "unexpectedly installed missing offline release" >&2
+            exit 1
+          fi
+          printf '%s\n' "${output}" | grep -F "local package is missing"
+
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
 
