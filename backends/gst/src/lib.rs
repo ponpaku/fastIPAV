@@ -877,6 +877,10 @@ fn select_h264_decoder(config: &RxConfig) -> String {
     requested.to_string()
 }
 
+/// Avoid libavcodec frame-level threading, which adds decoder output delay.
+/// Slice threading keeps parallel decode available for multi-slice H.264.
+pub const LOW_LATENCY_AVDEC_H264: &str = "avdec_h264 thread-type=slice";
+
 fn preferred_h264_decoder(profile: &PlatformProfile) -> String {
     match profile.resolve() {
         PlatformProfile::RaspberryPi => {
@@ -887,7 +891,11 @@ fn preferred_h264_decoder(profile: &PlatformProfile) -> String {
             };
             for candidate in candidates {
                 if *candidate == "decodebin" || has_element(candidate) {
-                    return (*candidate).to_string();
+                    return if *candidate == "avdec_h264" {
+                        LOW_LATENCY_AVDEC_H264.to_string()
+                    } else {
+                        (*candidate).to_string()
+                    };
                 }
             }
         }
@@ -900,7 +908,11 @@ fn preferred_h264_decoder(profile: &PlatformProfile) -> String {
                 "decodebin",
             ] {
                 if candidate == "decodebin" || has_element(candidate) {
-                    return candidate.to_string();
+                    return if candidate == "avdec_h264" {
+                        LOW_LATENCY_AVDEC_H264.to_string()
+                    } else {
+                        candidate.to_string()
+                    };
                 }
             }
         }
@@ -1093,6 +1105,26 @@ mod tests {
         assert!(!branch.contains("! videoconvert"));
         assert!(branch.contains("queue leaky=downstream max-size-buffers=1 "));
         assert!(branch.contains("! kmssink "));
+    }
+
+    #[test]
+    fn low_latency_avdec_decoder_keeps_slice_threading_and_custom_choices() {
+        let mut rx = RxConfig::default();
+        rx.platform.profile = PlatformProfile::LinuxPc;
+        let automatically_selected = select_h264_decoder(&rx);
+        if has_element("avdec_h264") {
+            assert_eq!(automatically_selected, LOW_LATENCY_AVDEC_H264);
+            let (pipeline, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
+            assert!(pipeline.contains("! avdec_h264 thread-type=slice ! videoconvert"));
+            assert_pipeline_parses(&pipeline);
+        }
+
+        rx.video.decoder_element = "avdec_h264 max-threads=1".into();
+        assert_eq!(select_h264_decoder(&rx), "avdec_h264 max-threads=1");
+        rx.video.decoder_element = "openh264dec".into();
+        assert_eq!(select_h264_decoder(&rx), "openh264dec");
+        rx.video.decoder_element = "v4l2h264dec".into();
+        assert_eq!(select_h264_decoder(&rx), "v4l2h264dec");
     }
 
     #[test]
