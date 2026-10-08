@@ -703,9 +703,13 @@ fn rx_video_branch(
     // rtph264depay already negotiates AU-aligned byte-stream H.264, which
     // avdec_h264 accepts directly. Preserve parsing for V4L2, OpenH264,
     // decodebin and compound/custom decoder fragments.
-    let direct_avdec_h264 = decoder.split_whitespace().next() == Some("avdec_h264")
-        && !decoder.contains('!');
-    let h264_parser = if direct_avdec_h264 { "" } else { "h264parse ! " };
+    let direct_avdec_h264 =
+        decoder.split_whitespace().next() == Some("avdec_h264") && !decoder.contains('!');
+    let h264_parser = if direct_avdec_h264 {
+        ""
+    } else {
+        "h264parse ! "
+    };
     let sink = if config.video.sink_element.trim().is_empty() {
         render_sink(
             renderer,
