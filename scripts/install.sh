@@ -58,6 +58,9 @@ as_root() {
   fi
 }
 
+# shellcheck source=scripts/install-transaction.sh
+source "${SCRIPT_DIR}/install-transaction.sh"
+
 normalize_arch() {
   case "$(uname -m)" in
     x86_64) printf 'x86_64' ;;
@@ -238,6 +241,7 @@ enable_and_restart_service() {
   local service="$1"
   as_root systemctl enable "${service}"
   as_root systemctl restart "${service}"
+  as_root systemctl is-active --quiet "${service}"
 }
 
 enable_services() {
@@ -267,6 +271,7 @@ restart_active_services() {
     if systemctl is-active --quiet "${service}" 2>/dev/null; then
       log "restarting active service ${service}"
       as_root systemctl restart "${service}"
+      as_root systemctl is-active --quiet "${service}"
     fi
   done
 }
@@ -448,6 +453,15 @@ RX_BACKUP=""
 TX_EXISTED=false
 RX_EXISTED=false
 ACTIVATION_STARTED=false
+TRANSACTION_DIR=""
+SHARE_EXISTED=false
+TX_UNIT_EXISTED=false
+RX_UNIT_EXISTED=false
+MANAGED_SERVICES_SNAPSHOT=false
+TX_WAS_ACTIVE=false
+RX_WAS_ACTIVE=false
+TX_WAS_ENABLED=false
+RX_WAS_ENABLED=false
 
 restore_binary() {
   local role="$1"
@@ -472,11 +486,17 @@ cleanup() {
   local status=$?
   local tx_restored=true
   local rx_restored=true
+  local rollback_failed=false
   trap - EXIT
   if [ "${status}" -ne 0 ] && [ "${ACTIVATION_STARTED}" = true ]; then
-    printf '[install] installation failed after binary activation; restoring prior binaries\n' >&2
+    printf '[install] installation failed after binary activation; restoring prior binaries, assets, units and service state\n' >&2
     restore_binary tx "${TX_BACKUP}" "${TX_EXISTED}" || tx_restored=false
     restore_binary rx "${RX_BACKUP}" "${RX_EXISTED}" || rx_restored=false
+    if [ "${tx_restored}" = false ] || [ "${rx_restored}" = false ]; then
+      rollback_failed=true
+    fi
+    restore_deployed_assets || rollback_failed=true
+    restore_service_states || rollback_failed=true
   fi
   if [ -n "${TX_BACKUP}" ] && [ "${tx_restored}" = true ]; then
     as_root rm -f "${TX_BACKUP}" || true
@@ -490,9 +510,14 @@ cleanup() {
   if [ -n "${RX_STAGED}" ]; then
     as_root rm -f "${RX_STAGED}" || true
   fi
-  rm -rf "${TMP_DIR}"
+  if [ "${rollback_failed}" = true ]; then
+    printf '[install] ERROR: rollback incomplete; saved transaction state remains at %s\n' "${TMP_DIR}" >&2
+    exit 1
+  fi
+  as_root rm -rf "${TMP_DIR}"
   exit "${status}"
 }
+
 trap cleanup EXIT
 # Run EXIT cleanup for catchable termination signals as well. In particular,
 # service shutdown during an upgrade must not leave just one new binary active.
@@ -650,6 +675,11 @@ if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
     --config "${CONFIG_DIR}/rx.toml" --check-config >/dev/null ||
     fail "staged rx binary/config is not usable by service user avoverip"
 fi
+
+# Snapshot units, deployed assets and active/enabled systemd states before any
+# binary is replaced. A later failed restart must leave all components aligned.
+log "snapshotting installed units, assets and service state"
+snapshot_install_transaction
 
 # Preserve both existing binaries before replacing either. A failed second
 # rename must not leave a mixed-version transmitter/receiver installation.
