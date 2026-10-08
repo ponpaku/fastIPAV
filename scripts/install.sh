@@ -432,15 +432,55 @@ CHECKSUM_NAME="$(checksum_name "${VERSION}" "${ARCH}")"
 TMP_DIR="$(mktemp -d)"
 TX_STAGED=""
 RX_STAGED=""
+TX_BACKUP=""
+RX_BACKUP=""
+TX_EXISTED=false
+RX_EXISTED=false
+ACTIVATION_STARTED=false
+
+restore_binary() {
+  local role="$1"
+  local backup="$2"
+  local existed="$3"
+  if [ "${existed}" = true ]; then
+    if ! as_root mv -f "${backup}" "${PREFIX}/bin/${role}"; then
+      printf '[install] ERROR: rollback failed for %s; previous binary retained at %s\\n' \
+        "${role}" "${backup}" >&2
+      return 1
+    fi
+  else
+    if ! as_root rm -f "${PREFIX}/bin/${role}"; then
+      printf '[install] ERROR: cannot remove newly installed %s during rollback\\n' \
+        "${role}" >&2
+      return 1
+    fi
+  fi
+}
 
 cleanup() {
-  rm -rf "${TMP_DIR}"
+  local status=$?
+  local tx_restored=true
+  local rx_restored=true
+  trap - EXIT
+  if [ "${status}" -ne 0 ] && [ "${ACTIVATION_STARTED}" = true ]; then
+    printf '[install] installation failed after binary activation; restoring prior binaries\\n' >&2
+    restore_binary tx "${TX_BACKUP}" "${TX_EXISTED}" || tx_restored=false
+    restore_binary rx "${RX_BACKUP}" "${RX_EXISTED}" || rx_restored=false
+  fi
+  if [ -n "${TX_BACKUP}" ] && [ "${tx_restored}" = true ]; then
+    as_root rm -f "${TX_BACKUP}" || true
+  fi
+  if [ -n "${RX_BACKUP}" ] && [ "${rx_restored}" = true ]; then
+    as_root rm -f "${RX_BACKUP}" || true
+  fi
   if [ -n "${TX_STAGED}" ]; then
     as_root rm -f "${TX_STAGED}" || true
   fi
   if [ -n "${RX_STAGED}" ]; then
     as_root rm -f "${RX_STAGED}" || true
   fi
+  rm -rf "${TMP_DIR}"
+  exit "${status}"
 }
 trap cleanup EXIT
 
@@ -590,7 +630,21 @@ if [ "${SYSTEMD_DIR}" = "/etc/systemd/system" ]; then
     fail "staged rx binary/config is not usable by service user avoverip"
 fi
 
+# Preserve both existing binaries before replacing either. A failed second
+# rename must not leave a mixed-version transmitter/receiver installation.
+TX_BACKUP="${PREFIX}/bin/.tx.fastipav.previous.${BASHPID}"
+RX_BACKUP="${PREFIX}/bin/.rx.fastipav.previous.${BASHPID}"
+if [ -e "${PREFIX}/bin/tx" ] || [ -L "${PREFIX}/bin/tx" ]; then
+  as_root cp -Pp "${PREFIX}/bin/tx" "${TX_BACKUP}"
+  TX_EXISTED=true
+fi
+if [ -e "${PREFIX}/bin/rx" ] || [ -L "${PREFIX}/bin/rx" ]; then
+  as_root cp -Pp "${PREFIX}/bin/rx" "${RX_BACKUP}"
+  RX_EXISTED=true
+fi
+
 log "activating binaries in ${PREFIX}/bin"
+ACTIVATION_STARTED=true
 as_root mv -f "${TX_STAGED}" "${PREFIX}/bin/tx"
 TX_STAGED=""
 as_root mv -f "${RX_STAGED}" "${PREFIX}/bin/rx"
