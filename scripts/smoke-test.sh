@@ -476,7 +476,7 @@ rx_pid=""
 # network jitter, or a benchmark for the actual physical multicast network.
 LOSSY_TX_CONFIG="${TMP_DIR}/tx.lossy-video.toml"
 sed \
-  -e 's#encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast"#encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast ! identity drop-probability=0.05"#' \
+  -e 's#encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast"#encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast bitrate=6000 key-int-max=30 bframes=0 aud=true byte-stream=true ! identity drop-probability=0.05"#' \
   "${VIDEO_ONLY_CONFIG}" > "${LOSSY_TX_CONFIG}"
 
 "${RX_BIN}" --config "${RX_VIDEO_ONLY_CONFIG}" > "${RX_LOG}" 2>&1 &
