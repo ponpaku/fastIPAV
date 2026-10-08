@@ -3,6 +3,20 @@ use std::fs;
 
 const IFF_MULTICAST: u32 = 0x1000;
 
+// Linux interface names are limited to IFNAMSIZ - 1 bytes. Validate names
+// before using them to form sysfs paths or GStreamer interface properties.
+pub fn validate_interface_name(name: &str) -> Result<()> {
+    if name.is_empty() || name.len() > 15 || matches!(name, "." | "..") {
+        bail!("invalid network.interface name {:?}: expected 1..=15 bytes", name);
+    }
+    if name.chars().any(|ch| {
+        ch.is_whitespace() || ch.is_control() || matches!(ch, '/' | ':' | '\\')
+    }) {
+        bail!("invalid network.interface name {:?}: contains forbidden characters", name);
+    }
+    Ok(())
+}
+
 pub fn resolve_interface_name_for_rtp(
     selection: Option<&str>,
     rtp_mtu: u32,
@@ -18,6 +32,7 @@ pub fn resolve_interface_name(selection: Option<&str>) -> Result<Option<String>>
     if let Some(explicit) = selection {
         let explicit = explicit.trim();
         if !explicit.is_empty() && explicit != "auto" {
+            validate_interface_name(explicit)?;
             if !interface_exists(explicit) {
                 bail!("requested interface {} does not exist", explicit);
             }
@@ -131,6 +146,21 @@ mod tests {
 
     fn names(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    #[test]
+    fn allows_linux_interface_names_and_vlan_suffixes() {
+        for name in ["lo", "eth0", "wlan0", "enp2s0.100", "veth1234", "br-private"] {
+            assert!(validate_interface_name(name).is_ok(), "{name}");
+        }
+    }
+
+    #[test]
+    fn rejects_unsafe_or_oversized_interface_names() {
+        for name in ["", ".", "..", "../eth0", "eth0/../lo", "wlan0:1", "bad iface",
+                     "bad\\niface", "0123456789abcdef"] {
+            assert!(validate_interface_name(name).is_err(), "{name:?}");
+        }
     }
 
     #[test]
