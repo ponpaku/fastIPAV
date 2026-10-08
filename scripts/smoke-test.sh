@@ -36,6 +36,10 @@ cleanup() {
     cat "${TX_LOG}" >&2 2>/dev/null || true
     printf '%s\n' '--- rx log ---' >&2
     cat "${RX_LOG}" >&2 2>/dev/null || true
+    if [ -f "${TMP_DIR}/rtp-relay.log" ]; then
+      printf '%s\n' '--- RTP relay log ---' >&2
+      cat "${TMP_DIR}/rtp-relay.log" >&2 || true
+    fi
   fi
 
   rm -rf "${TMP_DIR}"
@@ -574,7 +578,8 @@ printf '[smoke-test] RX continued decoding through 0.5%% synthetic RTP datagram 
 kill -TERM "${tx_pid}" "${rx_pid}" "${proxy_pid}"
 wait "${tx_pid}"
 wait "${rx_pid}"
-wait "${proxy_pid}"
+# gst-launch may exit with a signal status after the expected TERM.
+wait "${proxy_pid}" || true
 tx_pid=""
 rx_pid=""
 proxy_pid=""
