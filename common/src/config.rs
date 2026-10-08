@@ -803,7 +803,9 @@ fn default_gop() -> u32 {
 }
 
 fn default_video_jitter_latency_ms() -> u32 {
-    20
+    // A low-latency starting point for wired multicast. Sites with more
+    // jitter can raise this at the cost of added capture-to-display delay.
+    10
 }
 
 fn default_audio_jitter_latency_ms() -> u32 {
