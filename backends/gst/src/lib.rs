@@ -1131,12 +1131,16 @@ mod tests {
     #[test]
     fn rtp_h264_parser_is_required_for_runtime_negotiation() {
         let mut rx = RxConfig::default();
-        for decoder in [LOW_LATENCY_AVDEC_H264, "avdec_h264", "v4l2h264dec"] {
+        for decoder in [LOW_LATENCY_AVDEC_H264, "avdec_h264"] {
             rx.video.decoder_element = decoder.to_string();
             let (branch, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
             assert!(branch.contains("! h264parse ! "));
             assert_pipeline_parses(&branch);
         }
+        // CI hosts may not have a V4L2 hardware decoder registered.
+        rx.video.decoder_element = "v4l2h264dec".into();
+        let (hardware, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
+        assert!(hardware.contains("! h264parse ! v4l2h264dec"));
     }
 
     #[test]
