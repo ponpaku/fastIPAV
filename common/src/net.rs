@@ -7,12 +7,19 @@ const IFF_MULTICAST: u32 = 0x1000;
 // before using them to form sysfs paths or GStreamer interface properties.
 pub fn validate_interface_name(name: &str) -> Result<()> {
     if name.is_empty() || name.len() > 15 || matches!(name, "." | "..") {
-        bail!("invalid network.interface name {:?}: expected 1..=15 bytes", name);
+        bail!(
+            "invalid network.interface name {:?}: expected 1..=15 bytes",
+            name
+        );
     }
-    if name.chars().any(|ch| {
-        ch.is_whitespace() || ch.is_control() || matches!(ch, '/' | ':' | '\\')
-    }) {
-        bail!("invalid network.interface name {:?}: contains forbidden characters", name);
+    if name
+        .chars()
+        .any(|ch| ch.is_whitespace() || ch.is_control() || matches!(ch, '/' | ':' | '\\'))
+    {
+        bail!(
+            "invalid network.interface name {:?}: contains forbidden characters",
+            name
+        );
     }
     Ok(())
 }
@@ -150,15 +157,32 @@ mod tests {
 
     #[test]
     fn allows_linux_interface_names_and_vlan_suffixes() {
-        for name in ["lo", "eth0", "wlan0", "enp2s0.100", "veth1234", "br-private"] {
+        for name in [
+            "lo",
+            "eth0",
+            "wlan0",
+            "enp2s0.100",
+            "veth1234",
+            "br-private",
+        ] {
             assert!(validate_interface_name(name).is_ok(), "{name}");
         }
     }
 
     #[test]
     fn rejects_unsafe_or_oversized_interface_names() {
-        for name in ["", ".", "..", "../eth0", "eth0/../lo", "wlan0:1", "bad iface",
-                     "bad\\niface", "0123456789abcdef"] {
+        for name in [
+            "",
+            ".",
+            "..",
+            "../eth0",
+            "eth0/../lo",
+            "wlan0:1",
+            "bad iface",
+            "bad\\niface",
+            "bad\niface",
+            "0123456789abcdef",
+        ] {
             assert!(validate_interface_name(name).is_err(), "{name:?}");
         }
     }
