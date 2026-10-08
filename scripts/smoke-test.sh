@@ -154,6 +154,44 @@ kill -TERM "${retry_pid}"
 wait "${retry_pid}"
 retry_pid=""
 
+# Invalid GStreamer elements must not terminate the supervisor. The health
+# endpoint stays available and startup construction failures are retried.
+TX_BAD_PIPELINE_CONFIG="${TMP_DIR}/tx.bad-pipeline.toml"
+sed \
+  -e 's/port = 18081/port = 18087/' \
+  -e 's#source_element = "videotestsrc name=video_src is-live=true pattern=smpte do-timestamp=true ! videoconvert ! jpegenc"#source_element = "fastipav_nonexistent_source"#' \
+  "${CONFIG_DIR}/tx.smoketest.toml" >"${TX_BAD_PIPELINE_CONFIG}"
+
+"${TX_BIN}" --config "${TX_BAD_PIPELINE_CONFIG}" >"${TMP_DIR}/tx-bad-pipeline.log" 2>&1 &
+retry_pid=$!
+wait_for_unhealthy "tx-construction-retry" "http://127.0.0.1:18087/healthz" "${retry_pid}"
+wait_for_restart_increment \
+  "tx-construction-retry" \
+  "http://127.0.0.1:18087/stats" \
+  "${retry_pid}" \
+  0
+kill -TERM "${retry_pid}"
+wait "${retry_pid}"
+retry_pid=""
+
+RX_BAD_PIPELINE_CONFIG="${TMP_DIR}/rx.bad-pipeline.toml"
+sed \
+  -e 's/port = 18082/port = 18088/' \
+  -e 's#sink_element = "fakesink sync=false async=false"#sink_element = "fastipav_nonexistent_sink"#' \
+  "${CONFIG_DIR}/rx.smoketest.toml" >"${RX_BAD_PIPELINE_CONFIG}"
+
+"${RX_BIN}" --config "${RX_BAD_PIPELINE_CONFIG}" >"${TMP_DIR}/rx-bad-pipeline.log" 2>&1 &
+retry_pid=$!
+wait_for_unhealthy "rx-construction-retry" "http://127.0.0.1:18088/healthz" "${retry_pid}"
+wait_for_restart_increment \
+  "rx-construction-retry" \
+  "http://127.0.0.1:18088/stats" \
+  "${retry_pid}" \
+  0
+kill -TERM "${retry_pid}"
+wait "${retry_pid}"
+retry_pid=""
+
 ENCODER_DROP_CONFIG="${TMP_DIR}/tx.drop-encoder.toml"
 sed \
   -e 's/port = 18081/port = 18085/' \
