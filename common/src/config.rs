@@ -238,6 +238,33 @@ impl RecoveryConfig {
     }
 }
 
+/// V4L2 capture transfer mode. `auto` preserves GStreamer's device-specific
+/// choice, while `mmap` avoids the userspace read() copy on supported devices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum CaptureIoMode {
+    #[default]
+    Auto,
+    Rw,
+    Mmap,
+    Userptr,
+    Dmabuf,
+    DmabufImport,
+}
+
+impl CaptureIoMode {
+    pub fn gst_value(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Rw => "rw",
+            Self::Mmap => "mmap",
+            Self::Userptr => "userptr",
+            Self::Dmabuf => "dmabuf",
+            Self::DmabufImport => "dmabuf-import",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TxVideoConfig {
@@ -249,6 +276,8 @@ pub struct TxVideoConfig {
     pub source_decoder_element: String,
     #[serde(default = "default_video_device")]
     pub device: String,
+    #[serde(default)]
+    pub capture_io_mode: CaptureIoMode,
     #[serde(default = "default_width")]
     pub width: u32,
     #[serde(default = "default_height")]
@@ -270,6 +299,7 @@ impl Default for TxVideoConfig {
             source_caps: String::new(),
             source_decoder_element: String::new(),
             device: default_video_device(),
+            capture_io_mode: CaptureIoMode::Auto,
             width: default_width(),
             height: default_height(),
             fps: default_fps(),
@@ -876,6 +906,27 @@ mod tests {
         assert!(!rx.video.sync);
         // Audio retains its own timing policy; it is not silently changed.
         assert!(rx.audio.sync);
+    }
+
+    #[test]
+    fn capture_io_mode_is_typed_and_defaults_to_auto() {
+        let tx = TxConfig::default();
+        assert_eq!(tx.video.capture_io_mode, CaptureIoMode::Auto);
+        let serialized = toml::to_string(&tx).unwrap();
+        assert!(serialized.contains("capture_io_mode = \"auto\""));
+        assert!(toml::from_str::<TxConfig>(
+            &serialized.replace("capture_io_mode = \"auto\"", "capture_io_mode = \"bogus\"")
+        )
+        .is_err());
+        for (mode, value) in [
+            (CaptureIoMode::Mmap, "mmap"),
+            (CaptureIoMode::Rw, "rw"),
+            (CaptureIoMode::Userptr, "userptr"),
+            (CaptureIoMode::Dmabuf, "dmabuf"),
+            (CaptureIoMode::DmabufImport, "dmabuf-import"),
+        ] {
+            assert_eq!(mode.gst_value(), value);
+        }
     }
 
     #[test]
