@@ -120,8 +120,19 @@ pub struct GstServicePipeline {
 
 impl GstServicePipeline {
     pub fn for_tx(config: &TxConfig, interface_name: Option<&str>) -> Result<Self> {
+        Self::for_tx_with_conversion(config, interface_name, false)
+    }
+
+    /// Force color conversion after MJPEG decode when the fast I420 path
+    /// cannot negotiate the capture device's actual JPEG subsampling.
+    pub fn for_tx_with_conversion(
+        config: &TxConfig,
+        interface_name: Option<&str>,
+        force_video_conversion: bool,
+    ) -> Result<Self> {
         init_gstreamer()?;
-        let descriptions = build_tx_descriptions(config, interface_name);
+        let descriptions =
+            build_tx_descriptions(config, interface_name, force_video_conversion);
         Self::new("tx", descriptions, config.recovery.monitor_interval_ms)
     }
 
@@ -421,8 +432,12 @@ fn init_gstreamer() -> Result<()> {
     gst::init().context("failed to initialize gstreamer")
 }
 
-fn build_tx_descriptions(config: &TxConfig, interface_name: Option<&str>) -> PipelineDescriptions {
-    let video = tx_video_branch(config, interface_name);
+fn build_tx_descriptions(
+    config: &TxConfig,
+    interface_name: Option<&str>,
+    force_video_conversion: bool,
+) -> PipelineDescriptions {
+    let video = tx_video_branch(config, interface_name, force_video_conversion);
     let audio = config
         .audio
         .enabled
@@ -449,7 +464,11 @@ fn build_rx_descriptions(config: &RxConfig, interface_name: Option<&str>) -> Pip
     }
 }
 
-fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
+fn tx_video_branch(
+    config: &TxConfig,
+    interface_name: Option<&str>,
+    force_video_conversion: bool,
+) -> String {
     let interface_fragment = interface_name
         .map(|name| format!(" multicast-iface={}", quoted(name)))
         .unwrap_or_default();
@@ -475,13 +494,25 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
     } else {
         format!(" ! {}", config.video.source_decoder_element.trim())
     };
+    // jpegdec supports native I420 for 4:2:0 MJPEG, so x264 can consume it
+    // directly without an additional full-frame color conversion. Other JPEG
+    // subsampling may negotiate a different raw format; the TX supervisor
+    // retries with videoconvert on a not-negotiated GStreamer error.
+    let direct_mjpeg_i420 = !force_video_conversion
+        && config.video.source_decoder_element.trim() == "jpegdec"
+        && source_caps.starts_with("image/jpeg")
+        && encoder_input_caps == ",format=I420";
+    let conversion = if direct_mjpeg_i420 {
+        ""
+    } else {
+        "videoconvert ! "
+    };
     format!(
         concat!(
             "{source} ",
             "! {source_caps} ",
             "! queue leaky=downstream max-size-buffers=1 max-size-bytes=0 max-size-time=0{source_decoder} ",
-            "! videoconvert ",
-            "! video/x-raw,width={width},height={height},framerate={fps}/1{encoder_input_caps} ",
+            "! {conversion}video/x-raw,width={width},height={height},framerate={fps}/1{encoder_input_caps} ",
             "! identity name=video_ingress_monitor silent=true ",
             "! {encoder} ",
             "! h264parse config-interval=-1 ",
@@ -494,6 +525,7 @@ fn tx_video_branch(config: &TxConfig, interface_name: Option<&str>) -> String {
         source = source,
         source_caps = source_caps,
         source_decoder = source_decoder,
+        conversion = conversion,
         width = config.video.width,
         height = config.video.height,
         fps = config.video.fps,
@@ -1062,6 +1094,39 @@ mod tests {
         rx.video.renderer = RendererKind::KmsDrm;
         let (custom_sink, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
         assert!(custom_sink.contains("! v4l2h264dec ! videoconvert ! video/x-raw"));
+    }
+
+    #[test]
+    fn mjpeg_i420_uses_direct_encoder_input_without_cpu_conversion() {
+        let mut tx = TxConfig::default();
+        tx.video.source_caps = "image/jpeg,width=1920,height=1080,framerate=30/1".into();
+        tx.video.source_decoder_element = "jpegdec".into();
+        tx.video.encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast".into();
+        let direct = tx_video_branch(&tx, Some("lo"), false);
+        assert!(direct.contains("queue leaky=downstream max-size-buffers=1 "));
+        assert!(direct.contains(
+            "! jpegdec ! video/x-raw,width=1920,height=1080,framerate=30/1,format=I420"
+        ));
+        assert!(!direct.contains("! videoconvert "));
+        assert_pipeline_parses(&direct);
+
+        let fallback = tx_video_branch(&tx, Some("lo"), true);
+        assert!(fallback.contains("! jpegdec ! videoconvert ! video/x-raw"));
+        assert_pipeline_parses(&fallback);
+    }
+
+    #[test]
+    fn raw_capture_and_non_i420_encoders_keep_color_converter() {
+        let tx = TxConfig::default();
+        let raw = tx_video_branch(&tx, Some("lo"), false);
+        assert!(raw.contains("! videoconvert ! video/x-raw"));
+
+        let mut hardware = tx;
+        hardware.video.source_caps = "image/jpeg,width=1920,height=1080,framerate=30/1".into();
+        hardware.video.source_decoder_element = "jpegdec".into();
+        hardware.video.encoder_element = "v4l2h264enc".into();
+        let branch = tx_video_branch(&hardware, Some("lo"), false);
+        assert!(branch.contains("! jpegdec ! videoconvert ! video/x-raw"));
     }
 
     #[test]
