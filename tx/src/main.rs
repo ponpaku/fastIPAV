@@ -117,6 +117,9 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
     tokio::pin!(shutdown);
     let auto_encoder = matches!(config.video.encoder_element.trim(), "" | "auto");
     let mut force_software_encoder = false;
+    // Some UVC capture cards output 4:2:2 or 4:4:4 JPEG rather than I420.
+    // Keep the direct I420 fast path until actual caps negotiation disproves it.
+    let mut force_video_conversion = false;
 
     loop {
         let mut cycle_config = config.clone();
@@ -152,7 +155,11 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         };
         state.set_interface(interface_name.clone()).await;
 
-        let pipeline_result = GstServicePipeline::for_tx(&cycle_config, interface_name.as_deref());
+        let pipeline_result = GstServicePipeline::for_tx_with_conversion(
+            &cycle_config,
+            interface_name.as_deref(),
+            force_video_conversion,
+        );
         let mut pipeline = match pipeline_result {
             Ok(pipeline) => pipeline,
             Err(err) => {
@@ -191,6 +198,10 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             }
         };
         let uses_v4l2_encoder = pipeline.descriptions().video.contains("v4l2h264enc");
+        let uses_direct_mjpeg = pipeline
+            .descriptions()
+            .video
+            .contains("! jpegdec ! video/x-raw");
         state
             .set_pipeline_descriptions(
                 pipeline.descriptions().video.clone(),
@@ -204,6 +215,14 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             Ok(events) => events,
             Err(err) => {
                 let reason = format!("failed to start tx pipeline: {err:#}");
+                if uses_direct_mjpeg && is_negotiation_failure(&reason) {
+                    force_video_conversion = true;
+                    state
+                        .add_note(
+                            "MJPEG I420 fast path could not negotiate; retrying with videoconvert",
+                        )
+                        .await;
+                }
                 if auto_encoder
                     && uses_v4l2_encoder
                     && reason.to_ascii_lowercase().contains("v4l2h264enc")
@@ -578,6 +597,14 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         };
 
         let restart_reason_lower = restart_reason.to_ascii_lowercase();
+        if uses_direct_mjpeg && is_negotiation_failure(&restart_reason) {
+            force_video_conversion = true;
+            state
+                .add_note(
+                    "MJPEG I420 fast path could not negotiate; falling back to videoconvert",
+                )
+                .await;
+        }
         if auto_encoder
             && uses_v4l2_encoder
             && ((!video_ready && restart_reason_lower.contains("encoder produced no h264"))
@@ -610,6 +637,11 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             _ = tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)) => {}
         }
     }
+}
+
+fn is_negotiation_failure(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("not-negotiated") || lower.contains("not negotiated")
 }
 
 async fn shutdown_signal() {
