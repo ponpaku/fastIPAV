@@ -151,6 +151,17 @@ jobs:
           printf '%s\n' "${output}" | grep -F -- '--local-dist requires --version'
           test ! -e "${marker}"
 
+          # A valid-looking but missing offline archive must fail before apt-get
+          # makes any changes to the host.
+          if output="$(APT_MARKER="${marker}" PATH="${shim_dir}:${PATH}" \
+              bash scripts/install.sh --install-deps --local-dist \
+                --version v999.999.999 2>&1)"; then
+            echo "missing local release unexpectedly accepted" >&2
+            exit 1
+          fi
+          printf '%s\n' "${output}" | grep -F 'local package is missing'
+          test ! -e "${marker}"
+
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
 
