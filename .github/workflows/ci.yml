@@ -173,6 +173,43 @@ jobs:
             rm -rf "${preflight_root}" "${preflight_log}"
           fi
 
+          if [ "${{ matrix.name }}" = "ubuntu-22.04-x86_64" ]; then
+            # A failed second binary rename must restore both original executables.
+            rollback_root="$(mktemp -d)"
+            mkdir -p "${rollback_root}/usr/local/bin"
+            printf 'previous tx\\n' > "${rollback_root}/usr/local/bin/tx"
+            printf 'previous rx\\n' > "${rollback_root}/usr/local/bin/rx"
+            chmod 0755 "${rollback_root}/usr/local/bin/"{tx,rx}
+            shim_dir="$(mktemp -d)"
+            printf '%s\\n' \
+              '#!/usr/bin/env bash' \
+              'if [ "${@: -1}" = "${MV_FAIL_DEST}" ] && [ ! -e "${MV_FAIL_MARKER}" ]; then' \
+              '  : > "${MV_FAIL_MARKER}"' \
+              '  exit 42' \
+              'fi' \
+              'exec /usr/bin/mv "$@"' > "${shim_dir}/mv"
+            chmod 0755 "${shim_dir}/mv"
+            if MV_FAIL_DEST="${rollback_root}/usr/local/bin/rx" \
+                MV_FAIL_MARKER="${rollback_root}/injected-failure" \
+                PATH="${shim_dir}:${PATH}" \
+                bash scripts/install.sh \
+                  --version "${release_tag}" \
+                  --local-dist \
+                  --prefix "${rollback_root}/usr/local" \
+                  --config-dir "${rollback_root}/etc/avoverip" \
+                  --systemd-dir "${rollback_root}/systemd" \
+                  > "${rollback_root}/install.log" 2>&1; then
+              echo "installer unexpectedly succeeded despite injected second rename failure" >&2
+              exit 1
+            fi
+            test -f "${rollback_root}/injected-failure"
+            grep -F 'restoring prior binaries' "${rollback_root}/install.log"
+            test "$(cat "${rollback_root}/usr/local/bin/tx")" = 'previous tx'
+            test "$(cat "${rollback_root}/usr/local/bin/rx")" = 'previous rx'
+            test "$(find "${rollback_root}/usr/local/bin" -name '*.fastipav.previous.*' | wc -l)" -eq 0
+            rm -rf "${rollback_root}" "${shim_dir}"
+          fi
+
           install_root="$(mktemp -d)"
           bash scripts/install.sh \
             --version "${release_tag}" \
