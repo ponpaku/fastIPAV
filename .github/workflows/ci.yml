@@ -171,6 +171,9 @@ jobs:
       - name: Check workspace
         run: cargo check --workspace --all-targets --locked
 
+      - name: Test installer service rollback
+        run: bash scripts/test-install-transaction.sh
+
       - name: Run unit tests
         run: cargo test --workspace --locked
 
