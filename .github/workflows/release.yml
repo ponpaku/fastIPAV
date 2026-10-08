@@ -49,10 +49,10 @@ jobs:
 
       - name: Verify tag commit is on main
         run: |
-          git fetch origin main
-          tag_commit="$(git rev-list -n1 "${GITHUB_REF_NAME}")"
+          git -c safe.directory="${GITHUB_WORKSPACE}" fetch origin main
+          tag_commit="$(git -c safe.directory="${GITHUB_WORKSPACE}" rev-list -n1 "${GITHUB_REF_NAME}")"
           test -n "${tag_commit}"
-          git merge-base --is-ancestor "${tag_commit}" origin/main || {
+          git -c safe.directory="${GITHUB_WORKSPACE}" merge-base --is-ancestor "${tag_commit}" origin/main || {
             echo "release tag must point to a commit already merged into main" >&2
             exit 1
           }
