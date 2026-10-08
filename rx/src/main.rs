@@ -228,7 +228,9 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                 let reason = format!("failed to start rx pipeline: {err:#}");
                 if auto_decoder
                     && uses_v4l2_decoder
-                    && reason.to_ascii_lowercase().contains("v4l2h264dec")
+                    && (reason.to_ascii_lowercase().contains("v4l2h264dec")
+                        || reason.to_ascii_lowercase().contains("not-negotiated")
+                        || reason.to_ascii_lowercase().contains("not negotiated"))
                 {
                     force_software_decoder = true;
                     state
@@ -524,6 +526,8 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         if auto_decoder
             && uses_v4l2_decoder
             && (restart_reason_lower.contains("v4l2h264dec")
+                || restart_reason_lower.contains("not-negotiated")
+                || restart_reason_lower.contains("not negotiated")
                 || restart_reason_lower.contains("decoder produced no frames")
                 || restart_reason_lower.contains("decoder stalled"))
         {
