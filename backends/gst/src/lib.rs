@@ -473,8 +473,9 @@ fn tx_video_branch(
         .unwrap_or_default();
     let source = if config.video.source_element.trim().is_empty() {
         format!(
-            "v4l2src name=video_src device={} do-timestamp=true",
-            quoted(&config.video.device)
+            "v4l2src name=video_src device={} io-mode={} do-timestamp=true",
+            quoted(&config.video.device),
+            config.video.capture_io_mode.gst_value()
         )
     } else {
         config.video.source_element.clone()
@@ -510,7 +511,7 @@ fn tx_video_branch(
         concat!(
             "{source} ",
             "! {source_caps} ",
-            "! queue leaky=downstream max-size-buffers=1 max-size-bytes=0 max-size-time=0{source_decoder} ",
+            "! queue silent=true leaky=downstream max-size-buffers=1 max-size-bytes=0 max-size-time=0{source_decoder} ",
             "! {conversion}video/x-raw,width={width},height={height},framerate={fps}/1{encoder_input_caps} ",
             "! identity name=video_ingress_monitor silent=true ",
             "! {encoder} ",
@@ -1078,7 +1079,7 @@ mod tests {
         let (branch, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
         assert!(branch.contains("! v4l2h264dec ! identity name=video_codec_monitor"));
         assert!(!branch.contains("! videoconvert"));
-        assert!(branch.contains("queue leaky=downstream max-size-buffers=1 "));
+        assert!(branch.contains("queue silent=true leaky=downstream max-size-buffers=1 "));
         assert!(branch.contains("! kmssink "));
     }
 
@@ -1102,7 +1103,7 @@ mod tests {
         tx.video.source_decoder_element = "jpegdec".into();
         tx.video.encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast".into();
         let direct = tx_video_branch(&tx, Some("lo"), false);
-        assert!(direct.contains("queue leaky=downstream max-size-buffers=1 "));
+        assert!(direct.contains("queue silent=true leaky=downstream max-size-buffers=1 "));
         assert!(direct
             .contains("! jpegdec ! video/x-raw,width=1920,height=1080,framerate=30/1,format=I420"));
         assert!(!direct.contains("! videoconvert "));
@@ -1111,6 +1112,30 @@ mod tests {
         let fallback = tx_video_branch(&tx, Some("lo"), true);
         assert!(fallback.contains("! jpegdec ! videoconvert ! video/x-raw"));
         assert_pipeline_parses(&fallback);
+    }
+
+    #[test]
+    fn v4l2_capture_io_mode_is_explicit_only_for_v4l2_source() {
+        use avoverip_common::config::CaptureIoMode;
+
+        let mut tx = TxConfig::default();
+        tx.video.capture_io_mode = CaptureIoMode::Mmap;
+        let v4l2 = tx_video_branch(&tx, Some("lo"), false);
+        assert!(v4l2.starts_with(
+            "v4l2src name=video_src device=\"/dev/video0\" io-mode=mmap do-timestamp=true"
+        ));
+        assert!(v4l2.contains(
+            "! queue silent=true leaky=downstream max-size-buffers=1 "
+        ));
+        assert_pipeline_parses(&v4l2);
+
+        tx.video.capture_io_mode = CaptureIoMode::Auto;
+        let fallback = tx_video_branch(&tx, Some("lo"), false);
+        assert!(fallback.contains("io-mode=auto"));
+
+        tx.video.source_element = "videotestsrc name=video_src is-live=true".into();
+        let custom = tx_video_branch(&tx, Some("lo"), false);
+        assert!(!custom.contains("io-mode="));
     }
 
     #[test]
