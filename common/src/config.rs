@@ -903,8 +903,10 @@ mod tests {
 
     #[test]
     fn recovery_backoff_rejects_excessively_fast_restart_loops() {
-        let mut recovery = RecoveryConfig::default();
-        recovery.restart_backoff_ms = 1;
+        let mut recovery = RecoveryConfig {
+            restart_backoff_ms: 1,
+            ..RecoveryConfig::default()
+        };
         assert!(recovery.validate().is_err());
         recovery.restart_backoff_ms = 249;
         assert!(recovery.validate().is_err());
