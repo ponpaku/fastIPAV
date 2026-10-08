@@ -298,6 +298,10 @@ source "$HOME/.cargo/env"
 cargo build
 ```
 
+## 実機受入試験
+
+CI 合格後も、実機での表示・音声・長時間安定性・リンク障害からの復旧を確認する。実施手順と記録テンプレートは [実機受入試験](docs/hardware-validation.md) を参照する。
+
 ## 既知の制約
 
 - `estimated_capture_to_display_ms` はend-to-end測定probe未実装のため現状 `null`。RX jitterだけからcapture-to-display値を捏造しない
