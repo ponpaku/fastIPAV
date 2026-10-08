@@ -135,9 +135,11 @@ if [ ! -x "${TX_BIN}" ] || [ ! -x "${RX_BIN}" ]; then
   cargo build --workspace --locked
 fi
 
+# Use a syntactically valid but absent NIC to exercise the runtime retry path.
+# Invalid interface names are rejected by --check-config before the supervisor starts.
 RETRY_CONFIG="${TMP_DIR}/tx.retry.toml"
 sed \
-  -e 's/interface = "lo"/interface = "fastipav-missing0"/' \
+  -e 's/interface = "lo"/interface = "avipmissing0"/' \
   -e 's/port = 18081/port = 18083/' \
   "${CONFIG_DIR}/tx.smoketest.toml" >"${RETRY_CONFIG}"
 
