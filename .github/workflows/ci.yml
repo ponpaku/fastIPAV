@@ -138,6 +138,25 @@ jobs:
             test "${first_checksum}" = "${second_checksum}"
           fi
 
+          # Service activation must fail before installation on a host without systemd.
+          if [ ! -d /run/systemd/system ]; then
+            preflight_root="$(mktemp -d)"
+            preflight_log="$(mktemp)"
+            if bash scripts/install.sh \
+              --version "${release_tag}" \
+              --local-dist \
+              --enable-service tx \
+              --prefix "${preflight_root}/usr/local" \
+              --config-dir "${preflight_root}/etc/avoverip" \
+              >"${preflight_log}" 2>&1; then
+              echo "installer unexpectedly accepted --enable-service without systemd" >&2
+              exit 1
+            fi
+            grep -F -- '--enable-service requires a running systemd manager' "${preflight_log}"
+            test ! -e "${preflight_root}/usr/local/bin/tx"
+            rm -rf "${preflight_root}" "${preflight_log}"
+          fi
+
           install_root="$(mktemp -d)"
           bash scripts/install.sh \
             --version "${release_tag}" \
