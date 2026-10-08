@@ -385,6 +385,11 @@ if [ -n "${ENABLE_SERVICE}" ] && [ "${SYSTEMD_DIR}" != "/etc/systemd/system" ]; 
   fail "--enable-service requires --systemd-dir /etc/systemd/system"
 fi
 
+# Reject an impossible service activation before downloading or modifying files.
+if [ -n "${ENABLE_SERVICE}" ] && [ ! -d /run/systemd/system ]; then
+  fail "--enable-service requires a running systemd manager"
+fi
+
 if [ "${INSTALL_DEPS}" = true ]; then
   need_cmd apt-get
   install_deps
