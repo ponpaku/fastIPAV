@@ -396,8 +396,10 @@ if [ "${USE_LOCAL_DIST}" = true ] && [ -z "${VERSION}" ]; then
   fail "--local-dist requires --version"
 fi
 if [ -n "${VERSION}" ]; then
-  printf '%s\\n' "${VERSION}" |
-    grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.-]+)?
+  printf '%s\n' "${VERSION}" |
+    grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' ||
+    fail "invalid release version: ${VERSION}"
+fi
 
 if [ "${INSTALL_DEPS}" = true ]; then
   need_cmd apt-get
