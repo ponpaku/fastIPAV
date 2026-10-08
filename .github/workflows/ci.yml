@@ -179,7 +179,7 @@ jobs:
             mkdir -p "${rollback_root}/usr/local/bin"
             printf 'previous tx\n' > "${rollback_root}/usr/local/bin/tx"
             printf 'previous rx\n' > "${rollback_root}/usr/local/bin/rx"
-            chmod 0755 "${rollback_root}/usr/local/bin/"{tx,rx}
+            chmod 0755 "${rollback_root}/usr/local/bin/tx" "${rollback_root}/usr/local/bin/rx"
             shim_dir="$(mktemp -d)"
             # Variables belong to the generated script, not the current shell.
             # shellcheck disable=SC2016
