@@ -1121,7 +1121,8 @@ mod tests {
         rx.video.height = 720;
         rx.video.fps = 60;
         let (restricted, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
-        assert!(restricted.contains("! video/x-h264,width=1280,height=720,framerate=60/1 ! v4l2h264dec"));
+        assert!(restricted
+            .contains("! video/x-h264,width=1280,height=720,framerate=60/1 ! v4l2h264dec"));
         assert!(!restricted.contains("! videoconvert"));
     }
 
