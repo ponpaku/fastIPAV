@@ -471,4 +471,47 @@ wait "${rx_pid}"
 tx_pid=""
 rx_pid=""
 
+# Exercise low-rate H.264 access-unit loss before RTP packetization.
+# This approximates missing compressed video frames, NOT UDP packet loss,
+# network jitter, or a benchmark for the actual physical multicast network.
+LOSSY_TX_CONFIG="${TMP_DIR}/tx.lossy-video.toml"
+sed \
+  -e 's#encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast"#encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast ! identity drop-probability=0.05"#' \
+  "${VIDEO_ONLY_CONFIG}" > "${LOSSY_TX_CONFIG}"
+
+"${RX_BIN}" --config "${RX_VIDEO_ONLY_CONFIG}" > "${RX_LOG}" 2>&1 &
+rx_pid=$!
+"${TX_BIN}" --config "${LOSSY_TX_CONFIG}" > "${TX_LOG}" 2>&1 &
+tx_pid=$!
+wait_for_health "tx-lossy-video" "http://127.0.0.1:18081/healthz" "${tx_pid}"
+wait_for_health "rx-lossy-video" "http://127.0.0.1:18082/healthz" "${rx_pid}"
+
+LOSSY_STATS_BEFORE="$(curl -fsS "http://127.0.0.1:18082/stats")"
+LOSSY_FRAMES_BEFORE="$(json_u64_field "${LOSSY_STATS_BEFORE}" frames_total)"
+LOSSY_RESTARTS_BEFORE="$(json_u64_field "${LOSSY_STATS_BEFORE}" pipeline_restarts)"
+if [ -z "${LOSSY_FRAMES_BEFORE}" ] || [ -z "${LOSSY_RESTARTS_BEFORE}" ]; then
+  printf '[smoke-test] lossy video counters missing\n' >&2
+  exit 1
+fi
+sleep 3
+LOSSY_STATS_AFTER="$(curl -fsS "http://127.0.0.1:18082/stats")"
+LOSSY_FRAMES_AFTER="$(json_u64_field "${LOSSY_STATS_AFTER}" frames_total)"
+LOSSY_RESTARTS_AFTER="$(json_u64_field "${LOSSY_STATS_AFTER}" pipeline_restarts)"
+if [ -z "${LOSSY_FRAMES_AFTER}" ] || [ "${LOSSY_FRAMES_AFTER}" -le "${LOSSY_FRAMES_BEFORE}" ]; then
+  printf '[smoke-test] RX stopped processing video with moderate H264 buffer loss\n' >&2
+  exit 1
+fi
+if [ "${LOSSY_RESTARTS_AFTER}" != "${LOSSY_RESTARTS_BEFORE}" ]; then
+  printf '[smoke-test] RX restarted during moderate H264 buffer loss\n' >&2
+  exit 1
+fi
+printf '[smoke-test] RX continued decoding with 5%% synthetic H264 buffer drops (%s -> %s frames)\n' \
+  "${LOSSY_FRAMES_BEFORE}" "${LOSSY_FRAMES_AFTER}"
+
+kill -TERM "${tx_pid}" "${rx_pid}"
+wait "${tx_pid}"
+wait "${rx_pid}"
+tx_pid=""
+rx_pid=""
+
 printf '[smoke-test] tx/rx media flow, ingress detection, stall detection, and recovery passed\n'
