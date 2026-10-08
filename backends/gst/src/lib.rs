@@ -1124,9 +1124,7 @@ mod tests {
         assert!(v4l2.starts_with(
             "v4l2src name=video_src device=\"/dev/video0\" io-mode=mmap do-timestamp=true"
         ));
-        assert!(v4l2.contains(
-            "! queue silent=true leaky=downstream max-size-buffers=1 "
-        ));
+        assert!(v4l2.contains("! queue silent=true leaky=downstream max-size-buffers=1 "));
         assert_pipeline_parses(&v4l2);
 
         tx.video.capture_io_mode = CaptureIoMode::Auto;
