@@ -197,9 +197,13 @@ impl GstServicePipeline {
             while let Some(message) = bus.timed_pop(gst::ClockTime::ZERO) {
                 if let gst::MessageView::Error(error) = message.view() {
                     detail = Some(format!(
-                        "error from {}: {}",
+                        "error from {}: {}{}",
                         source_name(&message),
-                        error.error()
+                        error.error(),
+                        error
+                            .debug()
+                            .map(|debug| format!("; {debug}"))
+                            .unwrap_or_default()
                     ));
                     break;
                 }
@@ -230,10 +234,13 @@ impl GstServicePipeline {
                 };
                 let event = match message.view() {
                     gst::MessageView::Error(err) => Some(PipelineEvent::Error(format!(
-                        "{} error from {}: {}",
+                        "{} error from {}: {}{}",
                         pipeline_name,
                         source_name(&message),
-                        err.error()
+                        err.error(),
+                        err.debug()
+                            .map(|debug| format!("; {debug}"))
+                            .unwrap_or_default()
                     ))),
                     gst::MessageView::Warning(warn) => {
                         let source = source_name(&message);
