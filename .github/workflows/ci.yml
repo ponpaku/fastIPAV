@@ -124,6 +124,33 @@ jobs:
           fi
           printf '%s\n' "${output}" | grep -F "local package is missing"
 
+      - name: Installer rejects bad options before installing dependencies
+        if: matrix.name == 'ubuntu-22.04-x86_64'
+        run: |
+          shim_dir="$(mktemp -d)"
+          trap 'rm -rf "${shim_dir}"' EXIT
+          # Variables are expanded by the generated apt-get stub at execution.
+          # shellcheck disable=SC2016
+          printf '%s\n' '#!/bin/sh' ': > "$APT_MARKER"' 'exit 99' > "${shim_dir}/apt-get"
+          chmod +x "${shim_dir}/apt-get"
+          marker="${shim_dir}/apt-was-called"
+
+          if output="$(APT_MARKER="${marker}" PATH="${shim_dir}:${PATH}" \
+              bash scripts/install.sh --install-deps --version not-a-version 2>&1)"; then
+            echo "invalid release version unexpectedly accepted" >&2
+            exit 1
+          fi
+          printf '%s\n' "${output}" | grep -F 'invalid release version'
+          test ! -e "${marker}"
+
+          if output="$(APT_MARKER="${marker}" PATH="${shim_dir}:${PATH}" \
+              bash scripts/install.sh --install-deps --local-dist 2>&1)"; then
+            echo "local distribution without version unexpectedly accepted" >&2
+            exit 1
+          fi
+          printf '%s\n' "${output}" | grep -F -- '--local-dist requires --version'
+          test ! -e "${marker}"
+
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
 
