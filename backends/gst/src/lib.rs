@@ -1131,9 +1131,8 @@ mod tests {
         let mut tx = TxConfig::default();
         tx.video.encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast".into();
         let explicit = tx_video_branch(&tx, Some("lo"), false);
-        assert!(explicit.contains(
-            "byte-stream=true ! video/x-h264,stream-format=byte-stream,alignment=au"
-        ));
+        assert!(explicit
+            .contains("byte-stream=true ! video/x-h264,stream-format=byte-stream,alignment=au"));
         assert!(!explicit.contains("h264parse"));
         assert!(explicit.contains("rtph264pay pt=96 config-interval=-1"));
         assert_pipeline_parses(&explicit);
