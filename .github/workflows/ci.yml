@@ -177,11 +177,11 @@ jobs:
             # A failed second binary rename must restore both original executables.
             rollback_root="$(mktemp -d)"
             mkdir -p "${rollback_root}/usr/local/bin"
-            printf 'previous tx\\n' > "${rollback_root}/usr/local/bin/tx"
-            printf 'previous rx\\n' > "${rollback_root}/usr/local/bin/rx"
+            printf 'previous tx\n' > "${rollback_root}/usr/local/bin/tx"
+            printf 'previous rx\n' > "${rollback_root}/usr/local/bin/rx"
             chmod 0755 "${rollback_root}/usr/local/bin/"{tx,rx}
             shim_dir="$(mktemp -d)"
-            printf '%s\\n' \
+            printf '%s\n' \
               '#!/usr/bin/env bash' \
               'if [ "${@: -1}" = "${MV_FAIL_DEST}" ] && [ ! -e "${MV_FAIL_MARKER}" ]; then' \
               '  : > "${MV_FAIL_MARKER}"' \
