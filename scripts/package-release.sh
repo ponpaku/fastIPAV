@@ -146,7 +146,7 @@ ARCHIVE_PATH="dist/${PACKAGE_BASENAME}.tar.gz"
 CHECKSUM_PATH="dist/${PACKAGE_BASENAME}.sha256"
 rm -f "${ARCHIVE_PATH}" "${CHECKSUM_PATH}"
 
-SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct HEAD)}"
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -c safe.directory="${REPO_ROOT}" log -1 --format=%ct HEAD)}"
 printf '%s\n' "${SOURCE_DATE_EPOCH}" | grep -Eq '^[0-9]+$' ||
   fail "SOURCE_DATE_EPOCH must be an integer Unix timestamp"
 
