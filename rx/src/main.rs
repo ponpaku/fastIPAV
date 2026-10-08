@@ -464,6 +464,9 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                             break "audio ingress heartbeat channel closed".to_string();
                         }
                         let heartbeat = *events.audio_ingress.borrow_and_update();
+                        if let Some(observed_at) = heartbeat.observed_at {
+                            last_audio_ingress = observed_at;
+                        }
                         if heartbeat.total > audio_ingress_total {
                             if first_audio_ingress.is_none() {
                                 first_audio_ingress = heartbeat.observed_at;
