@@ -131,8 +131,7 @@ impl GstServicePipeline {
         force_video_conversion: bool,
     ) -> Result<Self> {
         init_gstreamer()?;
-        let descriptions =
-            build_tx_descriptions(config, interface_name, force_video_conversion);
+        let descriptions = build_tx_descriptions(config, interface_name, force_video_conversion);
         Self::new("tx", descriptions, config.recovery.monitor_interval_ms)
     }
 
@@ -1104,9 +1103,8 @@ mod tests {
         tx.video.encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast".into();
         let direct = tx_video_branch(&tx, Some("lo"), false);
         assert!(direct.contains("queue leaky=downstream max-size-buffers=1 "));
-        assert!(direct.contains(
-            "! jpegdec ! video/x-raw,width=1920,height=1080,framerate=30/1,format=I420"
-        ));
+        assert!(direct
+            .contains("! jpegdec ! video/x-raw,width=1920,height=1080,framerate=30/1,format=I420"));
         assert!(!direct.contains("! videoconvert "));
         assert_pipeline_parses(&direct);
 
