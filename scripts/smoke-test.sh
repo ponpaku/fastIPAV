@@ -584,4 +584,29 @@ tx_pid=""
 rx_pid=""
 proxy_pid=""
 
+# Verify the low-latency slice-threaded software decoder really receives and
+# decodes H.264 on the production RTP path, not only in a parse-only test.
+SLICE_RX_CONFIG="${TMP_DIR}/rx.slice-threaded.toml"
+sed 's#decoder_element = "avdec_h264"#decoder_element = "avdec_h264 thread-type=slice"#' \
+  "${RX_VIDEO_ONLY_CONFIG}" > "${SLICE_RX_CONFIG}"
+"${RX_BIN}" --config "${SLICE_RX_CONFIG}" --check-config >/dev/null
+"${RX_BIN}" --config "${SLICE_RX_CONFIG}" >"${RX_LOG}" 2>&1 &
+rx_pid=$!
+"${TX_BIN}" --config "${VIDEO_ONLY_CONFIG}" >"${TX_LOG}" 2>&1 &
+tx_pid=$!
+wait_for_health "tx-slice-decoding" "http://127.0.0.1:18081/healthz" "${tx_pid}"
+wait_for_health "rx-slice-decoding" "http://127.0.0.1:18082/healthz" "${rx_pid}"
+SLICE_BEFORE="$(json_u64_field "$(curl -fsS http://127.0.0.1:18082/stats)" frames_total)"
+[ -n "${SLICE_BEFORE}" ] || {
+  printf '[smoke-test] slice decoder statistics unavailable\n' >&2
+  exit 1
+}
+wait_for_metric_increment "rx-slice-decoding" "http://127.0.0.1:18082/stats" \
+  "${rx_pid}" frames_total "${SLICE_BEFORE}"
+kill -TERM "${tx_pid}" "${rx_pid}"
+wait "${tx_pid}"
+wait "${rx_pid}"
+tx_pid=""
+rx_pid=""
+
 printf '[smoke-test] tx/rx media flow, ingress detection, stall detection, and recovery passed\n'
