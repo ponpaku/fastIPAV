@@ -17,6 +17,35 @@ use std::{
 use tokio::sync::{mpsc, watch};
 
 const BUS_EVENT_CAPACITY: usize = 64;
+/// Coalesce high-rate RTP packet probes; watchdog deadlines are measured in
+/// seconds, so per-datagram Tokio watch notifications are unnecessary.
+const HEARTBEAT_NOTIFY_INTERVAL_MS: u64 = 25;
+
+/// Stores the last emitted notification time (in milliseconds since probe
+/// registration). The first packet always notifies the supervisor.
+struct HeartbeatNotifier {
+    last_reported_ms: AtomicU64,
+}
+
+impl HeartbeatNotifier {
+    fn new() -> Self {
+        Self {
+            last_reported_ms: AtomicU64::new(u64::MAX),
+        }
+    }
+
+    fn should_notify(&self, elapsed_ms: u64) -> bool {
+        let previous = self.last_reported_ms.load(Ordering::Relaxed);
+        if previous != u64::MAX
+            && elapsed_ms.saturating_sub(previous) < HEARTBEAT_NOTIFY_INTERVAL_MS
+        {
+            return false;
+        }
+        self.last_reported_ms
+            .compare_exchange(previous, elapsed_ms, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum PipelineEvent {
@@ -313,12 +342,18 @@ impl GstServicePipeline {
             )
         })?;
         let total = AtomicU64::new(0);
+        let started = Instant::now();
+        let notifier = HeartbeatNotifier::new();
         pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
             let total = total.fetch_add(1, Ordering::Relaxed).saturating_add(1);
-            sender.send_replace(MediaHeartbeat {
-                observed_at: Some(Instant::now()),
-                total,
-            });
+            let observed_at = Instant::now();
+            let elapsed_ms = observed_at.duration_since(started).as_millis() as u64;
+            if notifier.should_notify(elapsed_ms) {
+                sender.send_replace(MediaHeartbeat {
+                    observed_at: Some(observed_at),
+                    total,
+                });
+            }
             gst::PadProbeReturn::Ok
         })
         .ok_or_else(|| anyhow!("failed to install buffer probe on {}", element_name))?;
@@ -921,6 +956,30 @@ mod tests {
         init_gstreamer().unwrap();
         gst::parse::bin_from_description(description, true)
             .unwrap_or_else(|err| panic!("pipeline did not parse: {description}: {err}"));
+    }
+
+    #[test]
+    fn heartbeat_notifier_emits_first_packet_and_coalesces_bursts() {
+        let notifier = HeartbeatNotifier::new();
+        assert!(notifier.should_notify(0));
+        assert!(!notifier.should_notify(0));
+        assert!(!notifier.should_notify(24));
+        assert!(notifier.should_notify(25));
+        assert!(!notifier.should_notify(26));
+        assert!(notifier.should_notify(50));
+    }
+
+    #[test]
+    fn heartbeat_notifier_uses_elapsed_time_not_packet_count() {
+        let notifier = HeartbeatNotifier::new();
+        assert!(notifier.should_notify(1_000));
+        // Even thousands of RTP packets in a short interval need only
+        // one wake-up; a later packet refreshes the media watchdog.
+        for _ in 0..5_000 {
+            assert!(!notifier.should_notify(1_010));
+        }
+        assert!(notifier.should_notify(1_025));
+        assert!(notifier.should_notify(2_000));
     }
 
     #[test]
