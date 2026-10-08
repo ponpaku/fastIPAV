@@ -27,7 +27,8 @@ media_timeout_ms = 5000
 width = 1920
 height = 1080
 fps = 30
-jitter_latency_ms = 20
+# Prefer minimum buffering on a wired multicast LAN; increase for jitter.
+jitter_latency_ms = 10
 decoder_element = "avdec_h264"
 renderer = "auto"
 fullscreen = false
