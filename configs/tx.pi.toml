@@ -27,6 +27,8 @@ media_timeout_ms = 5000
 source_caps = "image/jpeg,width=1920,height=1080,framerate=30/1"
 source_decoder_element = "jpegdec"
 device = "/dev/video0"
+# Prefer memory-mapped V4L2 capture; TX falls back to auto if the driver rejects mmap.
+capture_io_mode = "mmap"
 width = 1920
 height = 1080
 fps = 30
