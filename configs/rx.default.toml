@@ -29,7 +29,9 @@ height = 1080
 fps = 30
 # Prefer minimum buffering on a wired multicast LAN; increase for jitter.
 jitter_latency_ms = 10
-decoder_element = "avdec_h264"
+# Prefer slice threading: no extra frame buffering from frame-threaded decoding.
+# Existing installed RX configs are preserved and must opt in explicitly.
+decoder_element = "avdec_h264 thread-type=slice"
 renderer = "auto"
 fullscreen = false
 # Lowest-latency video projection: render decoded frames without clock waiting.
