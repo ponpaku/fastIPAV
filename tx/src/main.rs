@@ -172,10 +172,22 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
                     continue;
                 }
 
+                state.bump_pipeline_restarts().await;
                 state
-                    .mark_failed(format!("tx pipeline construction failed: {reason}"))
+                    .mark_failed(format!("tx startup retry: {reason}"))
                     .await;
-                return Err(anyhow!(reason));
+                warn!(
+                    "tx pipeline construction retry scheduled in {} ms: {}",
+                    config.recovery.restart_backoff_ms, reason
+                );
+                tokio::select! {
+                    _ = &mut shutdown => {
+                        state.mark_stopping("tx shutting down").await;
+                        return Ok(());
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)) => {}
+                }
+                continue;
             }
         };
         let uses_v4l2_encoder = pipeline.descriptions().video.contains("v4l2h264enc");
