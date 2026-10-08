@@ -120,12 +120,18 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
     // Some UVC capture cards output 4:2:2 or 4:4:4 JPEG rather than I420.
     // Keep the direct I420 fast path until actual caps negotiation disproves it.
     let mut force_video_conversion = false;
+    // Some V4L2 capture devices do not implement streaming mmap. In that
+    // case retry via GStreamer's driver-specific I/O auto-selection.
+    let mut force_capture_auto = false;
 
     loop {
         let mut cycle_config = config.clone();
         if auto_encoder && force_software_encoder {
             cycle_config.video.encoder_element =
                 "x264enc tune=zerolatency speed-preset=ultrafast".to_string();
+        }
+        if force_capture_auto {
+            cycle_config.video.capture_io_mode = avoverip_common::config::CaptureIoMode::Auto;
         }
         let interface_name = match resolve_interface_name_for_rtp(
             config.network.interface_override(),
@@ -198,6 +204,9 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             }
         };
         let uses_v4l2_encoder = pipeline.descriptions().video.contains("v4l2h264enc");
+        let uses_mmap_capture = cycle_config.video.capture_io_mode
+            == avoverip_common::config::CaptureIoMode::Mmap
+            && cycle_config.video.source_element.trim().is_empty();
         let uses_direct_mjpeg = pipeline
             .descriptions()
             .video
@@ -215,6 +224,12 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             Ok(events) => events,
             Err(err) => {
                 let reason = format!("failed to start tx pipeline: {err:#}");
+                if uses_mmap_capture && is_capture_io_failure(&reason) {
+                    force_capture_auto = true;
+                    state
+                        .add_note("V4L2 mmap capture failed to start; retrying with io-mode=auto")
+                        .await;
+                }
                 if uses_direct_mjpeg && is_negotiation_failure(&reason) {
                     force_video_conversion = true;
                     state
@@ -597,6 +612,12 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         };
 
         let restart_reason_lower = restart_reason.to_ascii_lowercase();
+        if uses_mmap_capture && is_capture_io_failure(&restart_reason) {
+            force_capture_auto = true;
+            state
+                .add_note("V4L2 mmap capture failed; falling back to io-mode=auto")
+                .await;
+        }
         if uses_direct_mjpeg && is_negotiation_failure(&restart_reason) {
             force_video_conversion = true;
             state
@@ -635,6 +656,16 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
             _ = tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)) => {}
         }
     }
+}
+
+fn is_capture_io_failure(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("v4l2")
+        || lower.contains("video_src")
+        || lower.contains("video source")
+        || lower.contains("buffer pool")
+        || lower.contains("failed to allocate required memory")
+        || is_negotiation_failure(&lower)
 }
 
 fn is_negotiation_failure(message: &str) -> bool {
