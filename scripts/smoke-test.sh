@@ -14,17 +14,18 @@ RX_LOG="${TMP_DIR}/rx.log"
 tx_pid=""
 rx_pid=""
 retry_pid=""
+proxy_pid=""
 
 cleanup() {
   local status=$?
   trap - EXIT
 
-  for pid in "${tx_pid}" "${rx_pid}" "${retry_pid}"; do
+  for pid in "${tx_pid}" "${rx_pid}" "${retry_pid}" "${proxy_pid}"; do
     if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
       kill -TERM "${pid}" 2>/dev/null || true
     fi
   done
-  for pid in "${tx_pid}" "${rx_pid}" "${retry_pid}"; do
+  for pid in "${tx_pid}" "${rx_pid}" "${retry_pid}" "${proxy_pid}"; do
     if [ -n "${pid}" ]; then
       wait "${pid}" 2>/dev/null || true
     fi
@@ -380,6 +381,7 @@ if [ -z "${RX_RESTARTS_OFFLINE}" ] ||
 fi
 printf '[smoke-test] rx remained alive without repeated restarts through long TX outage\n'
 
+RECOVERY_STARTED_MS="$(date +%s%3N)"
 "${TX_BIN}" --config "${CONFIG_DIR}/tx.smoketest.toml" >"${TX_LOG}" 2>&1 &
 tx_pid=$!
 wait_for_health "tx" "http://127.0.0.1:18081/healthz" "${tx_pid}"
@@ -388,6 +390,9 @@ wait_for_metric_increment "rx-video" "http://127.0.0.1:18082/stats" \
   "${rx_pid}" frames_total "${RX_VIDEO_BEFORE_LOSS}"
 wait_for_metric_increment "rx-audio" "http://127.0.0.1:18082/stats" \
   "${rx_pid}" audio_chunks_total "${RX_AUDIO_BEFORE_LOSS}"
+RECOVERY_COMPLETE_MS="$(date +%s%3N)"
+printf '[smoke-test] TX relaunch to resumed RX video/audio: %s ms (synthetic loopback)\n' \
+  "$((RECOVERY_COMPLETE_MS - RECOVERY_STARTED_MS))"
 
 kill -TERM "${tx_pid}" "${rx_pid}"
 wait "${tx_pid}"
@@ -513,5 +518,65 @@ wait "${tx_pid}"
 wait "${rx_pid}"
 tx_pid=""
 rx_pid=""
+
+# Exercise loss on actual UDP/RTP datagrams by relaying the video stream
+# through a separate GStreamer UDP receiver/sender. Unlike the compressed
+# access-unit test above, the identity here drops complete UDP datagrams
+# *after RTP packetization*. This still runs over loopback, not a real NIC.
+command -v gst-launch-1.0 >/dev/null 2>&1 || {
+  printf '[smoke-test] gst-launch-1.0 is required for RTP packet-loss relay\n' >&2
+  exit 1
+}
+RTP_RELAY_RX_CONFIG="${TMP_DIR}/rx.rtp-relay.toml"
+sed \
+  -e 's/multicast_group = "239.255.10.10"/multicast_group = "239.255.10.11"/' \
+  -e 's/video_port = 5004/video_port = 5010/' \
+  "${RX_VIDEO_ONLY_CONFIG}" > "${RTP_RELAY_RX_CONFIG}"
+
+gst-launch-1.0 -q \
+  udpsrc multicast-group=239.255.10.10 port=5004 auto-multicast=true multicast-iface=lo \
+  ! identity drop-probability=0.005 \
+  ! udpsink host=239.255.10.11 port=5010 auto-multicast=true multicast-iface=lo sync=false async=false \
+  >"${TMP_DIR}/rtp-relay.log" 2>&1 &
+proxy_pid=$!
+"${RX_BIN}" --config "${RTP_RELAY_RX_CONFIG}" >"${RX_LOG}" 2>&1 &
+rx_pid=$!
+"${TX_BIN}" --config "${VIDEO_ONLY_CONFIG}" >"${TX_LOG}" 2>&1 &
+tx_pid=$!
+wait_for_health "tx-rtp-loss" "http://127.0.0.1:18081/healthz" "${tx_pid}"
+wait_for_health "rx-rtp-loss" "http://127.0.0.1:18082/healthz" "${rx_pid}"
+if ! kill -0 "${proxy_pid}" 2>/dev/null; then
+  printf '[smoke-test] RTP datagram relay exited unexpectedly\n' >&2
+  exit 1
+fi
+RTP_STATS_BEFORE="$(curl -fsS "http://127.0.0.1:18082/stats")"
+RTP_FRAMES_BEFORE="$(json_u64_field "${RTP_STATS_BEFORE}" frames_total)"
+RTP_RESTARTS_BEFORE="$(json_u64_field "${RTP_STATS_BEFORE}" pipeline_restarts)"
+if [ -z "${RTP_FRAMES_BEFORE}" ] || [ -z "${RTP_RESTARTS_BEFORE}" ]; then
+  printf '[smoke-test] RTP loss relay counters missing\n' >&2
+  exit 1
+fi
+sleep 3
+RTP_STATS_AFTER="$(curl -fsS "http://127.0.0.1:18082/stats")"
+RTP_FRAMES_AFTER="$(json_u64_field "${RTP_STATS_AFTER}" frames_total)"
+RTP_RESTARTS_AFTER="$(json_u64_field "${RTP_STATS_AFTER}" pipeline_restarts)"
+if [ -z "${RTP_FRAMES_AFTER}" ] || [ "${RTP_FRAMES_AFTER}" -le "${RTP_FRAMES_BEFORE}" ]; then
+  printf '[smoke-test] RX did not continue decoding through UDP/RTP datagram drops\n' >&2
+  exit 1
+fi
+if [ "${RTP_RESTARTS_AFTER}" != "${RTP_RESTARTS_BEFORE}" ]; then
+  printf '[smoke-test] RX restarted while receiving lossy RTP datagrams\n' >&2
+  exit 1
+fi
+printf '[smoke-test] RX continued decoding through 0.5%% synthetic RTP datagram loss (%s -> %s frames)\n' \
+  "${RTP_FRAMES_BEFORE}" "${RTP_FRAMES_AFTER}"
+
+kill -TERM "${tx_pid}" "${rx_pid}" "${proxy_pid}"
+wait "${tx_pid}"
+wait "${rx_pid}"
+wait "${proxy_pid}"
+tx_pid=""
+rx_pid=""
+proxy_pid=""
 
 printf '[smoke-test] tx/rx media flow, ingress detection, stall detection, and recovery passed\n'
