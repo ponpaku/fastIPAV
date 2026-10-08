@@ -371,4 +371,39 @@ wait "${rx_pid}"
 tx_pid=""
 rx_pid=""
 
+# The default installation disables audio. Verify that video-only TX and RX
+# become healthy end-to-end, without requiring an audio stream.
+RX_VIDEO_ONLY_CONFIG="${TMP_DIR}/rx.video-only.toml"
+sed 's/enabled = true/enabled = false/' "${CONFIG_DIR}/rx.smoketest.toml" > "${RX_VIDEO_ONLY_CONFIG}"
+
+"${RX_BIN}" --config "${RX_VIDEO_ONLY_CONFIG}" >"${RX_LOG}" 2>&1 &
+rx_pid=$!
+"${TX_BIN}" --config "${VIDEO_ONLY_CONFIG}" >"${TX_LOG}" 2>&1 &
+tx_pid=$!
+wait_for_health "tx-video-only" "http://127.0.0.1:18081/healthz" "${tx_pid}"
+wait_for_health "rx-video-only" "http://127.0.0.1:18082/healthz" "${rx_pid}"
+
+TX_VIDEO_ONLY_STATS="$(curl -fsS "http://127.0.0.1:18081/stats")"
+RX_VIDEO_ONLY_STATS="$(curl -fsS "http://127.0.0.1:18082/stats")"
+for stats in "${TX_VIDEO_ONLY_STATS}" "${RX_VIDEO_ONLY_STATS}"; do
+  printf '%s' "${stats}" | grep -Eq '"frames_total":[1-9][0-9]*' || {
+    printf '[smoke-test] video-only pipeline did not process video frames\\n' >&2
+    exit 1
+  }
+  printf '%s' "${stats}" | grep -Fq '"audio_enabled":false' || {
+    printf '[smoke-test] video-only service unexpectedly enabled audio\\n' >&2
+    exit 1
+  }
+  printf '%s' "${stats}" | grep -Fq '"audio_chunks_total":0' || {
+    printf '[smoke-test] video-only pipeline unexpectedly processed audio\\n' >&2
+    exit 1
+  }
+done
+
+kill -TERM "${tx_pid}" "${rx_pid}"
+wait "${tx_pid}"
+wait "${rx_pid}"
+tx_pid=""
+rx_pid=""
+
 printf '[smoke-test] tx/rx media flow, ingress detection, stall detection, and recovery passed\n'
