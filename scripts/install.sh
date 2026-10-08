@@ -395,7 +395,9 @@ if [ "${INSTALL_DEPS}" = true ]; then
   install_deps
 fi
 
-need_cmd curl
+if [ "${USE_LOCAL_DIST}" != true ]; then
+  need_cmd curl
+fi
 need_cmd tar
 need_cmd install
 need_cmd awk
