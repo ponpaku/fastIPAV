@@ -723,6 +723,17 @@ fn rx_video_branch(
     let direct_kms = decoder == "v4l2h264dec"
         && config.video.sink_element.trim().is_empty()
         && sink.starts_with("kmssink ");
+    // Constrain the encoded caps before V4L2 decoding rather than forcing
+    // system-memory raw caps between a hardware decoder and the KMS sink.
+    // This preserves the potential DMA-BUF negotiation on the direct path.
+    let pre_decode = if direct_kms {
+        format!(
+            " ! video/x-h264,width={},height={},framerate={}/1",
+            config.video.width, config.video.height, config.video.fps
+        )
+    } else {
+        String::new()
+    };
     let post_decode = if direct_kms {
         String::new()
     } else {
@@ -738,7 +749,7 @@ fn rx_video_branch(
             "! rtpjitterbuffer latency={latency_ms} drop-on-latency=true do-lost=true ",
             "! rtph264depay wait-for-keyframe=true ",
             "! video/x-h264,stream-format=byte-stream,alignment=au ",
-            "! h264parse ",
+            "! h264parse{pre_decode} ",
             "! {decoder}{post_decode} ",
             "! identity name=video_codec_monitor silent=true ",
             "! queue leaky=downstream max-size-buffers=1 max-size-bytes=0 max-size-time=0 ",
@@ -753,6 +764,7 @@ fn rx_video_branch(
         latency_ms = config.video.jitter_latency_ms,
         mtu = config.network.rtp_mtu,
         decoder = decoder,
+        pre_decode = pre_decode,
         post_decode = post_decode,
         sink = sink,
     );
@@ -1101,10 +1113,16 @@ mod tests {
         rx.video.renderer = RendererKind::KmsDrm;
         rx.video.decoder_element = "v4l2h264dec".to_string();
         let (branch, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
-        assert!(branch.contains("! v4l2h264dec ! identity name=video_codec_monitor"));
+        assert!(branch.contains("! h264parse ! video/x-h264,width=1920,height=1080,framerate=30/1 ! v4l2h264dec ! identity name=video_codec_monitor"));
         assert!(!branch.contains("! videoconvert"));
         assert!(branch.contains("queue leaky=downstream max-size-buffers=1 "));
         assert!(branch.contains("! kmssink "));
+        rx.video.width = 1280;
+        rx.video.height = 720;
+        rx.video.fps = 60;
+        let (restricted, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
+        assert!(restricted.contains("! video/x-h264,width=1280,height=720,framerate=60/1 ! v4l2h264dec"));
+        assert!(!restricted.contains("! videoconvert"));
     }
 
     #[test]
