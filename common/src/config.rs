@@ -222,8 +222,9 @@ impl Default for RecoveryConfig {
 
 impl RecoveryConfig {
     fn validate(&self) -> Result<()> {
-        if self.restart_backoff_ms == 0 {
-            bail!("recovery.restart_backoff_ms must be greater than zero");
+        // Avoid tight construction/restart loops when a device or plugin is absent.
+        if self.restart_backoff_ms < 250 {
+            bail!("recovery.restart_backoff_ms must be at least 250ms");
         }
         if self.monitor_interval_ms == 0 {
             bail!("recovery.monitor_interval_ms must be greater than zero");
@@ -899,6 +900,19 @@ fn default_use_driver_timestamps() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recovery_backoff_rejects_excessively_fast_restart_loops() {
+        let mut recovery = RecoveryConfig::default();
+        recovery.restart_backoff_ms = 1;
+        assert!(recovery.validate().is_err());
+        recovery.restart_backoff_ms = 249;
+        assert!(recovery.validate().is_err());
+        recovery.restart_backoff_ms = 250;
+        assert!(recovery.validate().is_ok());
+        recovery.restart_backoff_ms = 1_000;
+        assert!(recovery.validate().is_ok());
+    }
 
     #[test]
     fn receiver_defaults_to_immediate_video_rendering() {
