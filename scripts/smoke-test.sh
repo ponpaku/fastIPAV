@@ -72,6 +72,35 @@ json_u64_field() {
     sed -n "s/.*\"${field}\":\([0-9][0-9]*\).*/\1/p"
 }
 
+# Check that recovery processes fresh media rather than reporting stale health.
+wait_for_metric_increment() {
+  local role="$1"
+  local url="$2"
+  local pid="$3"
+  local field="$4"
+  local baseline="$5"
+  local stats=""
+  local current=""
+
+  for _ in $(seq 1 60); do
+    if ! kill -0 "${pid}" 2>/dev/null; then
+      printf '[smoke-test] %s exited while waiting for %s to increase\n' "${role}" "${field}" >&2
+      return 1
+    fi
+    stats="$(curl -fsS "${url}" 2>/dev/null || true)"
+    current="$(json_u64_field "${stats}" "${field}")"
+    if [ -n "${current}" ] && [ "${current}" -gt "${baseline}" ]; then
+      printf '[smoke-test] %s recovered %s (%s -> %s)\n' \
+        "${role}" "${field}" "${baseline}" "${current}"
+      return 0
+    fi
+    sleep 0.2
+  done
+  printf '[smoke-test] %s did not resume %s after sender recovery\n' \
+    "${role}" "${field}" >&2
+  return 1
+}
+
 wait_for_unhealthy() {
   local role="$1"
   local url="$2"
@@ -295,6 +324,12 @@ printf '%s' "${RX_STATS}" | grep -Eq '"audio_chunks_total":[1-9][0-9]*' || {
 
 # Verify that an established receiver detects media loss, restarts, and recovers.
 RX_STATS="$(curl -fsS "http://127.0.0.1:18082/stats")"
+RX_VIDEO_BEFORE_LOSS="$(json_u64_field "${RX_STATS}" frames_total)"
+RX_AUDIO_BEFORE_LOSS="$(json_u64_field "${RX_STATS}" audio_chunks_total)"
+[ -n "${RX_VIDEO_BEFORE_LOSS}" ] && [ -n "${RX_AUDIO_BEFORE_LOSS}" ] || {
+  printf '[smoke-test] could not read decoded RX counters before media loss\n' >&2
+  exit 1
+}
 RX_RESTARTS_BEFORE="$(json_u64_field "${RX_STATS}" pipeline_restarts)"
 [ -n "${RX_RESTARTS_BEFORE}" ] || {
   printf '[smoke-test] could not read rx pipeline_restarts before media loss\n' >&2
@@ -325,6 +360,10 @@ fi
 tx_pid=$!
 wait_for_health "tx" "http://127.0.0.1:18081/healthz" "${tx_pid}"
 wait_for_health "rx" "http://127.0.0.1:18082/healthz" "${rx_pid}"
+wait_for_metric_increment "rx-video" "http://127.0.0.1:18082/stats" \
+  "${rx_pid}" frames_total "${RX_VIDEO_BEFORE_LOSS}"
+wait_for_metric_increment "rx-audio" "http://127.0.0.1:18082/stats" \
+  "${rx_pid}" audio_chunks_total "${RX_AUDIO_BEFORE_LOSS}"
 
 kill -TERM "${tx_pid}" "${rx_pid}"
 wait "${tx_pid}"
