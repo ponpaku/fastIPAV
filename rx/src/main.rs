@@ -334,8 +334,11 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                         // Once video RTP is arriving, distinguish decoder stalls from
                         // downstream render stalls.
                         if !video_codec_ready
-                            && first_video_ingress
-                                .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
+                            && missing_output_while_input_active(
+                                first_video_ingress,
+                                last_video_ingress,
+                                media_timeout,
+                            )
                         {
                             break format!(
                                 "video RTP is arriving but decoder produced no frames within {} ms",
@@ -344,8 +347,11 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                         }
                         if video_codec_ready
                             && !video_ready
-                            && first_video_codec
-                                .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
+                            && missing_output_while_input_active(
+                                first_video_codec,
+                                last_video_codec,
+                                media_timeout,
+                            )
                         {
                             break format!(
                                 "decoded video is flowing but render path produced no frames within {} ms",
@@ -354,8 +360,11 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                         }
                         if config.audio.enabled
                             && !audio_ready
-                            && first_audio_ingress
-                                .is_some_and(|first_seen| first_seen.elapsed() > media_timeout)
+                            && missing_output_while_input_active(
+                                first_audio_ingress,
+                                last_audio_ingress,
+                                media_timeout,
+                            )
                         {
                             break format!(
                                 "audio RTP is arriving but receive path produced no audio within {} ms",
@@ -541,6 +550,63 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
             }
             _ = tokio::time::sleep(Duration::from_millis(config.recovery.restart_backoff_ms)) => {}
         }
+    }
+}
+
+// A short RTP burst followed by an offline transmitter is not a decoder stall.
+// Restart only if upstream media is still arriving without downstream output.
+fn missing_output_while_input_active(
+    first_input: Option<Instant>,
+    last_input: Instant,
+    timeout: Duration,
+) -> bool {
+    first_input.is_some_and(|first_seen| first_seen.elapsed() > timeout)
+        && last_input.elapsed() <= timeout
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn absent_input_does_not_trigger_restart() {
+        let now = Instant::now();
+        assert!(!missing_output_while_input_active(
+            None,
+            now,
+            Duration::from_secs(5)
+        ));
+    }
+
+    #[test]
+    fn burst_then_offline_does_not_trigger_restart() {
+        let old = Instant::now() - Duration::from_secs(8);
+        assert!(!missing_output_while_input_active(
+            Some(old),
+            old,
+            Duration::from_secs(5)
+        ));
+    }
+
+    #[test]
+    fn persistent_input_without_output_triggers_restart() {
+        let now = Instant::now();
+        let old = now - Duration::from_secs(8);
+        assert!(missing_output_while_input_active(
+            Some(old),
+            now,
+            Duration::from_secs(5)
+        ));
+    }
+
+    #[test]
+    fn recent_input_does_not_trigger_premature_restart() {
+        let now = Instant::now();
+        assert!(!missing_output_while_input_active(
+            Some(now),
+            now,
+            Duration::from_secs(5)
+        ));
     }
 }
 
