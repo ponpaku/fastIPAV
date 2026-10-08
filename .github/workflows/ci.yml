@@ -181,7 +181,8 @@ jobs:
             printf 'previous rx\n' > "${rollback_root}/usr/local/bin/rx"
             chmod 0755 "${rollback_root}/usr/local/bin/"{tx,rx}
             shim_dir="$(mktemp -d)"
-            # shellcheck disable=SC2016 # Embedded script expands its variables when executed.
+            # Variables belong to the generated script, not the current shell.
+            # shellcheck disable=SC2016
             printf '%s\n' \
               '#!/usr/bin/env bash' \
               'if [ "${@: -1}" = "${MV_FAIL_DEST}" ] && [ ! -e "${MV_FAIL_MARKER}" ]; then' \
