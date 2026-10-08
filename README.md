@@ -101,7 +101,7 @@ Linux desktopでWayland/X11へ表示するRXは、system serviceではdisplay se
 - 実運用設定: `/etc/avoverip/tx.toml` `/etc/avoverip/rx.toml`
 - systemd unit: `/etc/systemd/system/avoverip-tx.service` `/etc/systemd/system/avoverip-rx.service`
 
-既存の `/etc/avoverip/tx.toml` と `/etc/avoverip/rx.toml` は上書きしない。upgrade時は新binaryで既存config/pipelineを事前検証し、既にactiveなsystemd serviceは新binaryへ自動restartする。inactiveなserviceは勝手にenableしない。
+既存の `/etc/avoverip/tx.toml` と `/etc/avoverip/rx.toml` は上書きしない。upgrade時は新binaryで既存config/pipelineを事前検証し、既にactiveなsystemd serviceは新binaryへ自動restartする。inactiveなserviceは勝手にenableしない。更新途中で失敗した場合は、以前のバイナリ・共有アセット・systemd unitを戻し、以前activeだったサービスを旧版で再起動する。新たに起動/有効化されたサービスは元の状態へ戻す。ロールバック自体の失敗は明示的に記録し、退避状態を保持する。実際のsystemd運用は実機で検証する。
 
 ## Raspberry Pi のセットアップ
 
@@ -237,7 +237,7 @@ bash scripts/smoke-test.sh
 
 設定ファイルは起動時に検証される。multicast address、RTP port / payload type、映像サイズ・fps、HTTP bind、audio parameter などが不正な場合は pipeline 構築前にエラーで終了する。
 
-install/upgrade時は新しい `tx` / `rx` の `--check-config` で、保持中の実運用TOMLとGStreamer pipelineのparse可否を先に検証してからbinaryを置き換える。
+install/upgrade時は新しい `tx` / `rx` の `--check-config` で、保持中の実運用TOMLとGStreamer pipelineのparse可否を先に検証してからbinaryを置き換える。連続障害時の過剰な再起動を抑えるため、`recovery.restart_backoff_ms` は250ms以上を必要とする（標準1,000ms）。
 
 `/stats` の主な項目:
 
@@ -321,7 +321,7 @@ RX側の`h264parse`省略は、構成の解析が成功しても実際のRTP受�
 
 既定の受信映像は `sync=false` で、表示タイムスタンプまで待たず、復号したフレームをすぐ描画へ送る。映像用のRTPジッターバッファも既定で **10ms** に抑えている。RXの表示直前キューは **1フレーム** とし、表示が詰まったときは古いフレームを捨てて最新の映像を優先する。
 
-Raspberry Pi 4系でV4L2 H.264デコーダーとKMS/DRMを組み合わせる場合は、CPUの `videoconvert` を挟まずにデコード出力から直接KMSへ渡す経路を試す。DRM/バッファ形式が合わずGStreamerのネゴシエーションに失敗した場合は、自動デコーダー設定ではソフトウェアデコードへフォールバックする。**ゼロコピーが実際に成立するかはドライバーと実機次第**。Pi 5はH.264のハードウェアデコード/エンコードを前提とせず、通常はソフトウェア経路になる。
+Raspberry Pi 4系でV4L2 H.264デコーダーとKMS/DRMを組み合わせる場合は、CPUの `videoconvert` を挟まずにデコード出力から直接KMSへ渡す経路を試す。映像サイズ・FPSの一致はハードウェアデコーダー入力のH.264 capsで強制し、復号後にsystem-memoryのraw capsを挿入しない。DRM/バッファ形式が合わずGStreamerのネゴシエーションに失敗した場合は、自動デコーダー設定ではソフトウェアデコードへフォールバックする。**ゼロコピーが実際に成立するかはドライバーと実機次第**。Pi 5はH.264のハードウェアデコード/エンコードを前提とせず、通常はソフトウェア経路になる。
 
 `video.sync=false` は低遅延優先であり、画面の表示間隔や音声とのタイミングの安定性を犠牲にする場合がある。表示の滑らかさ・同期を優先するときはRX設定の `video.sync=true` に戻す。ジッターの多いネットワークでは `video.jitter_latency_ms` を10msから増やせるが、バッファ待ち時間も増える。
 
