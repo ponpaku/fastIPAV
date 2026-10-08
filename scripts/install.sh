@@ -403,7 +403,11 @@ fi
 
 if [ "${INSTALL_DEPS}" = true ]; then
   need_cmd apt-get
-  install_deps
+  # For a local release, verify the archive before changing host packages.
+  # Online installations retain their original dependency-install order.
+  if [ "${USE_LOCAL_DIST}" != true ]; then
+    install_deps
+  fi
 fi
 
 if [ "${USE_LOCAL_DIST}" != true ]; then
@@ -562,6 +566,11 @@ for required in \
 done
 [ -x "${PACKAGE_DIR}/bin/tx" ] || fail "packaged tx binary is not executable"
 [ -x "${PACKAGE_DIR}/bin/rx" ] || fail "packaged rx binary is not executable"
+
+if [ "${INSTALL_DEPS}" = true ] && [ "${USE_LOCAL_DIST}" = true ]; then
+  log "local release package verified; installing dependencies"
+  install_deps
+fi
 
 EXPECTED_BINARY_VERSION="${VERSION#v}"
 [ "$("${PACKAGE_DIR}/bin/tx" --version)" = "tx ${EXPECTED_BINARY_VERSION}" ] ||
