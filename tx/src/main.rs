@@ -600,9 +600,7 @@ async fn run_supervisor(config: TxConfig, state: SharedServiceState) -> Result<(
         if uses_direct_mjpeg && is_negotiation_failure(&restart_reason) {
             force_video_conversion = true;
             state
-                .add_note(
-                    "MJPEG I420 fast path could not negotiate; falling back to videoconvert",
-                )
+                .add_note("MJPEG I420 fast path could not negotiate; falling back to videoconvert")
                 .await;
         }
         if auto_encoder
