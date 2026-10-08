@@ -140,7 +140,8 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
     loop {
         let mut cycle_config = config.clone();
         if auto_decoder && force_software_decoder {
-            cycle_config.video.decoder_element = "avdec_h264".to_string();
+            cycle_config.video.decoder_element =
+                avoverip_gst::LOW_LATENCY_AVDEC_H264.to_string();
         }
         let interface_name = match resolve_interface_name_for_rtp(
             config.network.interface_override(),
