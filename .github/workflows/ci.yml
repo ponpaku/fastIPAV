@@ -190,6 +190,29 @@ jobs:
             bash scripts/package-release.sh --version "${release_tag}"
             second_checksum="$(awk '{ print $1 }' "${checksum_file}")"
             test "${first_checksum}" = "${second_checksum}"
+
+            # Even with --install-deps, a tampered local package must be
+            # rejected before apt-get can make changes to the host.
+            (
+              set -eu
+              tamper_tmp="$(mktemp -d)"
+              cp "${checksum_file}" "${tamper_tmp}/original.sha256"
+              trap 'cp "${tamper_tmp}/original.sha256" "${checksum_file}"; rm -rf "${tamper_tmp}"' EXIT
+              package_basename="$(basename "${checksum_file%.sha256}.tar.gz")"
+              printf '%064d  %s\n' 0 "${package_basename}" > "${checksum_file}"
+              # This variable is expanded when the generated stub runs.
+              # shellcheck disable=SC2016
+              printf '%s\n' '#!/bin/sh' ': > "$APT_MARKER"' 'exit 99' > "${tamper_tmp}/apt-get"
+              chmod +x "${tamper_tmp}/apt-get"
+              if output="$(APT_MARKER="${tamper_tmp}/apt-called" \
+                  PATH="${tamper_tmp}:${PATH}" bash scripts/install.sh \
+                    --version "${release_tag}" --local-dist --install-deps 2>&1)"; then
+                echo "corrupted local archive unexpectedly installed" >&2
+                exit 1
+              fi
+              printf '%s\n' "${output}" | grep -F 'checksum verification failed'
+              test ! -e "${tamper_tmp}/apt-called"
+            )
           fi
 
           # Service activation must fail before installation on a host without systemd.
