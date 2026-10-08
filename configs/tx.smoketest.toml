@@ -21,9 +21,12 @@ port = 18081
 [recovery]
 restart_backoff_ms = 1000
 monitor_interval_ms = 250
+media_timeout_ms = 5000
 
 [video]
-source_element = "videotestsrc name=video_src is-live=true pattern=smpte do-timestamp=true"
+source_element = "videotestsrc name=video_src is-live=true pattern=smpte do-timestamp=true ! videoconvert ! jpegenc"
+source_caps = "image/jpeg,width=1280,height=720,framerate=30/1"
+source_decoder_element = "jpegdec"
 device = "/dev/video0"
 width = 1280
 height = 720
@@ -33,10 +36,11 @@ gop = 30
 encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast"
 
 [audio]
-enabled = false
+enabled = true
+source_element = "audiotestsrc name=audio_src is-live=true wave=sine do-timestamp=true"
 device = "default"
 sample_rate = 48000
 channels = 2
 buffer_time_us = 20000
 latency_time_us = 5000
-use_driver_timestamps = true
+use_driver_timestamps = false

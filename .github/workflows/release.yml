@@ -1,0 +1,252 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:22.04
+    steps:
+      - name: Install build and runtime dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            ca-certificates \
+            curl \
+            git \
+            pkg-config \
+            shellcheck \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-tools \
+            gstreamer1.0-alsa \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly \
+            gstreamer1.0-libav \
+            gstreamer1.0-gl \
+            gstreamer1.0-x
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag commit is on main
+        run: |
+          git -c safe.directory="${GITHUB_WORKSPACE}" fetch origin main
+          tag_commit="$(git -c safe.directory="${GITHUB_WORKSPACE}" rev-list -n1 "${GITHUB_REF_NAME}")"
+          test -n "${tag_commit}"
+          git -c safe.directory="${GITHUB_WORKSPACE}" merge-base --is-ancestor "${tag_commit}" origin/main || {
+            echo "release tag must point to a commit already merged into main" >&2
+            exit 1
+          }
+
+      - name: Install stable Rust
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain none
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.cargo/bin/rustup" toolchain install 1.99.0 --profile minimal
+          "${HOME}/.cargo/bin/rustup" component add rustfmt clippy
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Verify release source
+        run: |
+          cargo audit
+          bash -n scripts/*.sh tools/*.sh
+          shellcheck scripts/*.sh tools/*.sh
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo check --workspace --all-targets --locked
+          cargo test --workspace --locked
+          bash scripts/smoke-test.sh
+
+  build:
+    needs: verify
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ubuntu:22.04
+    steps:
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            ca-certificates \
+            curl \
+            git \
+            pkg-config \
+            tar \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain none
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.cargo/bin/rustup" toolchain install 1.99.0 --profile minimal
+
+      - name: Build release package
+        run: |
+          bash scripts/package-release.sh \
+            --version "${GITHUB_REF_NAME}" \
+            --target "${{ matrix.target }}"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: fastipav-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  compatibility:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            image: ubuntu:24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            image: debian:12
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Install runtime dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y \
+            ca-certificates \
+            curl \
+            tar \
+            gstreamer1.0-tools \
+            gstreamer1.0-alsa \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly \
+            gstreamer1.0-libav \
+            gstreamer1.0-gl \
+            gstreamer1.0-x
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Download release package
+        uses: actions/download-artifact@v8
+        with:
+          name: fastipav-${{ matrix.arch }}
+          path: dist
+
+      - name: Verify packaged binaries on target userland
+        run: |
+          install_root="$(mktemp -d)"
+          bash scripts/install.sh \
+            --version "${GITHUB_REF_NAME}" \
+            --local-dist \
+            --prefix "${install_root}/usr/local" \
+            --config-dir "${install_root}/etc/avoverip" \
+            --systemd-dir "${install_root}/systemd"
+
+          "${install_root}/usr/local/bin/tx" --version
+          "${install_root}/usr/local/bin/rx" --version
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            "${install_root}/usr/local/bin/tx" \
+              --config "${install_root}/usr/local/share/fastipav/configs/tx.pi.toml" \
+              --check-config
+            "${install_root}/usr/local/bin/rx" \
+              --config "${install_root}/usr/local/share/fastipav/configs/rx.pi.toml" \
+              --check-config
+          fi
+
+          TX_BIN="${install_root}/usr/local/bin/tx" \
+          RX_BIN="${install_root}/usr/local/bin/rx" \
+          CONFIG_DIR="${install_root}/usr/local/share/fastipav/configs" \
+            bash scripts/smoke-test.sh
+
+  publish:
+    needs: compatibility
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            is_draft="$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq '.isDraft')"
+            if [ "${is_draft}" != "true" ]; then
+              published_assets="$(gh release view "${GITHUB_REF_NAME}" --json assets --jq '.assets[].name')"
+              verify_dir="$(mktemp -d)"
+              trap 'rm -rf "${verify_dir}"' EXIT
+              for asset in dist/*; do
+                asset_name="$(basename "${asset}")"
+                printf '%s\n' "${published_assets}" | grep -Fx -- "${asset_name}" >/dev/null || {
+                  echo "published release ${GITHUB_REF_NAME} is missing expected asset ${asset_name}" >&2
+                  exit 1
+                }
+                gh release download "${GITHUB_REF_NAME}" -p "${asset_name}" -D "${verify_dir}"
+                cmp -s "${asset}" "${verify_dir}/${asset_name}" || {
+                  echo "published immutable asset ${asset_name} does not match the rebuilt artifact" >&2
+                  exit 1
+                }
+              done
+              echo "release ${GITHUB_REF_NAME} is already published with identical immutable assets"
+              exit 0
+            fi
+          else
+            release_flags=(--draft --verify-tag --generate-notes)
+            case "${GITHUB_REF_NAME}" in
+              *-*) release_flags+=(--prerelease) ;;
+            esac
+            gh release create "${GITHUB_REF_NAME}" "${release_flags[@]}"
+          fi
+
+          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+          gh release edit "${GITHUB_REF_NAME}" --draft=false

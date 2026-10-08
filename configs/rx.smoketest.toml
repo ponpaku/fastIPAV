@@ -21,6 +21,7 @@ port = 18082
 [recovery]
 restart_backoff_ms = 1000
 monitor_interval_ms = 250
+media_timeout_ms = 5000
 
 [video]
 width = 1280
@@ -29,13 +30,14 @@ fps = 30
 jitter_latency_ms = 20
 decoder_element = "avdec_h264"
 sink_element = "fakesink sync=false async=false"
-renderer = "sdl"
+renderer = "auto"
 fullscreen = false
 sync = false
 max_lateness_ms = 25
 
 [audio]
-enabled = false
+enabled = true
+sink_element = "fakesink sync=false async=false"
 device = "default"
 sample_rate = 48000
 channels = 2

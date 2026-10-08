@@ -1,0 +1,374 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-audit:
+    name: security audit
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install workflow lint dependencies
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Install actionlint
+        run: |
+          curl -fsSL \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            -o /tmp/actionlint.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          /tmp/actionlint -version
+
+      - name: Lint GitHub Actions workflows
+        run: /tmp/actionlint -shellcheck=shellcheck -pyflakes=
+
+      - name: Install Rust toolchain
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain none
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.cargo/bin/rustup" toolchain install 1.99.0 --profile minimal
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Audit Rust dependencies
+        run: cargo audit
+
+  test:
+    name: test (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-24.04-x86_64
+            runner: ubuntu-24.04
+            image: ubuntu:24.04
+          - name: ubuntu-22.04-x86_64
+            runner: ubuntu-24.04
+            image: ubuntu:22.04
+          - name: ubuntu-22.04-arm64
+            runner: ubuntu-24.04-arm
+            image: ubuntu:22.04
+          - name: debian-12-arm64
+            runner: ubuntu-24.04-arm
+            image: debian:12
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Install build and runtime dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            ca-certificates \
+            curl \
+            git \
+            pkg-config \
+            shellcheck \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-tools \
+            gstreamer1.0-alsa \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly \
+            gstreamer1.0-libav \
+            gstreamer1.0-gl \
+            gstreamer1.0-x
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain none
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.cargo/bin/rustup" toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+
+      - name: Validate shell scripts
+        run: |
+          bash -n scripts/*.sh tools/*.sh
+          shellcheck scripts/*.sh tools/*.sh
+
+      - name: Local installer does not require curl
+        run: |
+          offline_path="$(mktemp -d)"
+          trap 'rm -rf "${offline_path}"' EXIT
+          for utility in dirname uname grep tar install awk sed sha256sum mktemp rm tr; do
+            ln -s "$(command -v "${utility}")" "${offline_path}/${utility}"
+          done
+          test ! -e "${offline_path}/curl"
+          # Fail on the deliberately absent package, not on a missing curl tool.
+          if output="$(PATH="${offline_path}" /bin/bash scripts/install.sh \
+              --local-dist --version v999.999.999 2>&1)"; then
+            echo "unexpectedly installed missing offline release" >&2
+            exit 1
+          fi
+          printf '%s\n' "${output}" | grep -F "local package is missing"
+
+      - name: Installer rejects bad options before installing dependencies
+        if: matrix.name == 'ubuntu-22.04-x86_64'
+        run: |
+          shim_dir="$(mktemp -d)"
+          trap 'rm -rf "${shim_dir}"' EXIT
+          # Variables are expanded by the generated apt-get stub at execution.
+          # shellcheck disable=SC2016
+          printf '%s\n' '#!/bin/sh' ': > "$APT_MARKER"' 'exit 99' > "${shim_dir}/apt-get"
+          chmod +x "${shim_dir}/apt-get"
+          marker="${shim_dir}/apt-was-called"
+
+          if output="$(APT_MARKER="${marker}" PATH="${shim_dir}:${PATH}" \
+              bash scripts/install.sh --install-deps --version not-a-version 2>&1)"; then
+            echo "invalid release version unexpectedly accepted" >&2
+            exit 1
+          fi
+          printf '%s\n' "${output}" | grep -F 'invalid release version'
+          test ! -e "${marker}"
+
+          if output="$(APT_MARKER="${marker}" PATH="${shim_dir}:${PATH}" \
+              bash scripts/install.sh --install-deps --local-dist 2>&1)"; then
+            echo "local distribution without version unexpectedly accepted" >&2
+            exit 1
+          fi
+          printf '%s\n' "${output}" | grep -F -- '--local-dist requires --version'
+          test ! -e "${marker}"
+
+          # A valid-looking but missing offline archive must fail before apt-get
+          # makes any changes to the host.
+          if output="$(APT_MARKER="${marker}" PATH="${shim_dir}:${PATH}" \
+              bash scripts/install.sh --install-deps --local-dist \
+                --version v999.999.999 2>&1)"; then
+            echo "missing local release unexpectedly accepted" >&2
+            exit 1
+          fi
+          printf '%s\n' "${output}" | grep -F 'local package is missing'
+          test ! -e "${marker}"
+
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Check workspace
+        run: cargo check --workspace --all-targets --locked
+
+      - name: Test installer service rollback
+        run: bash scripts/test-install-transaction.sh
+
+      - name: Run unit tests
+        run: cargo test --workspace --locked
+
+      - name: Run loopback smoke test
+        run: bash scripts/smoke-test.sh
+
+      - name: Test release packaging and local install
+        if: startsWith(matrix.name, 'ubuntu-22.04-') || matrix.name == 'debian-12-arm64'
+        run: |
+          workspace_version="$(grep -m1 '^version = "' Cargo.toml | cut -d'"' -f2)"
+          release_tag="v${workspace_version}"
+          bash scripts/package-release.sh --version "${release_tag}"
+
+          if [ "${{ matrix.name }}" = "ubuntu-22.04-x86_64" ]; then
+            checksum_file="dist/fastipav-${release_tag}-linux-x86_64.sha256"
+            first_checksum="$(awk '{ print $1 }' "${checksum_file}")"
+            bash scripts/package-release.sh --version "${release_tag}"
+            second_checksum="$(awk '{ print $1 }' "${checksum_file}")"
+            test "${first_checksum}" = "${second_checksum}"
+
+            # Even with --install-deps, a tampered local package must be
+            # rejected before apt-get can make changes to the host.
+            (
+              set -eu
+              tamper_tmp="$(mktemp -d)"
+              cp "${checksum_file}" "${tamper_tmp}/original.sha256"
+              trap 'cp "${tamper_tmp}/original.sha256" "${checksum_file}"; rm -rf "${tamper_tmp}"' EXIT
+              package_basename="$(basename "${checksum_file%.sha256}.tar.gz")"
+              printf '%064d  %s\n' 0 "${package_basename}" > "${checksum_file}"
+              # This variable is expanded when the generated stub runs.
+              # shellcheck disable=SC2016
+              printf '%s\n' '#!/bin/sh' ': > "$APT_MARKER"' 'exit 99' > "${tamper_tmp}/apt-get"
+              chmod +x "${tamper_tmp}/apt-get"
+              if output="$(APT_MARKER="${tamper_tmp}/apt-called" \
+                  PATH="${tamper_tmp}:${PATH}" bash scripts/install.sh \
+                    --version "${release_tag}" --local-dist --install-deps 2>&1)"; then
+                echo "corrupted local archive unexpectedly installed" >&2
+                exit 1
+              fi
+              printf '%s\n' "${output}" | grep -F 'checksum verification failed'
+              test ! -e "${tamper_tmp}/apt-called"
+            )
+          fi
+
+          # Service activation must fail before installation on a host without systemd.
+          if [ ! -d /run/systemd/system ]; then
+            preflight_root="$(mktemp -d)"
+            preflight_log="$(mktemp)"
+            if bash scripts/install.sh \
+              --version "${release_tag}" \
+              --local-dist \
+              --enable-service tx \
+              --prefix "${preflight_root}/usr/local" \
+              --config-dir "${preflight_root}/etc/avoverip" \
+              >"${preflight_log}" 2>&1; then
+              echo "installer unexpectedly accepted --enable-service without systemd" >&2
+              exit 1
+            fi
+            grep -F -- '--enable-service requires a running systemd manager' "${preflight_log}"
+            test ! -e "${preflight_root}/usr/local/bin/tx"
+            rm -rf "${preflight_root}" "${preflight_log}"
+          fi
+
+          if [ "${{ matrix.name }}" = "ubuntu-22.04-x86_64" ]; then
+            # A failed second binary rename must restore both original executables.
+            rollback_root="$(mktemp -d)"
+            mkdir -p "${rollback_root}/usr/local/bin"
+            printf 'previous tx\n' > "${rollback_root}/usr/local/bin/tx"
+            printf 'previous rx\n' > "${rollback_root}/usr/local/bin/rx"
+            chmod 0755 "${rollback_root}/usr/local/bin/tx" "${rollback_root}/usr/local/bin/rx"
+            shim_dir="$(mktemp -d)"
+            # Variables belong to the generated script, not the current shell.
+            # shellcheck disable=SC2016
+            printf '%s\n' \
+              '#!/usr/bin/env bash' \
+              'if [ "${@: -1}" = "${MV_FAIL_DEST}" ] && [ ! -e "${MV_FAIL_MARKER}" ]; then' \
+              '  : > "${MV_FAIL_MARKER}"' \
+              '  exit 42' \
+              'fi' \
+              'exec /usr/bin/mv "$@"' > "${shim_dir}/mv"
+            chmod 0755 "${shim_dir}/mv"
+            if MV_FAIL_DEST="${rollback_root}/usr/local/bin/rx" \
+                MV_FAIL_MARKER="${rollback_root}/injected-failure" \
+                PATH="${shim_dir}:${PATH}" \
+                bash scripts/install.sh \
+                  --version "${release_tag}" \
+                  --local-dist \
+                  --prefix "${rollback_root}/usr/local" \
+                  --config-dir "${rollback_root}/etc/avoverip" \
+                  --systemd-dir "${rollback_root}/systemd" \
+                  > "${rollback_root}/install.log" 2>&1; then
+              echo "installer unexpectedly succeeded despite injected second rename failure" >&2
+              exit 1
+            fi
+            test -f "${rollback_root}/injected-failure"
+            grep -F 'restoring prior binaries' "${rollback_root}/install.log"
+            test "$(cat "${rollback_root}/usr/local/bin/tx")" = 'previous tx'
+            test "$(cat "${rollback_root}/usr/local/bin/rx")" = 'previous rx'
+            test "$(find "${rollback_root}/usr/local/bin" -name '*.fastipav.previous.*' | wc -l)" -eq 0
+            rm -rf "${rollback_root}" "${shim_dir}"
+
+            # An interrupted installer must take the same rollback path.
+            signal_root="$(mktemp -d)"
+            mkdir -p "${signal_root}/usr/local/bin"
+            printf 'previous tx\n' > "${signal_root}/usr/local/bin/tx"
+            printf 'previous rx\n' > "${signal_root}/usr/local/bin/rx"
+            chmod 0755 "${signal_root}/usr/local/bin/tx" "${signal_root}/usr/local/bin/rx"
+            signal_shim="$(mktemp -d)"
+            # Variables below are expanded by the generated shim at runtime.
+            # shellcheck disable=SC2016
+            printf '%s\n' \
+              '#!/usr/bin/env bash' \
+              'if [ "${@: -1}" = "${MV_SIGNAL_DEST}" ] && [ ! -e "${MV_SIGNAL_MARKER}" ]; then' \
+              '  : > "${MV_SIGNAL_MARKER}"' \
+              '  kill -TERM "$PPID"' \
+              '  exit 0' \
+              'fi' \
+              'exec /usr/bin/mv "$@"' > "${signal_shim}/mv"
+            chmod 0755 "${signal_shim}/mv"
+            if MV_SIGNAL_DEST="${signal_root}/usr/local/bin/rx" \
+                MV_SIGNAL_MARKER="${signal_root}/interrupted" \
+                PATH="${signal_shim}:${PATH}" \
+                bash scripts/install.sh \
+                  --version "${release_tag}" \
+                  --local-dist \
+                  --prefix "${signal_root}/usr/local" \
+                  --config-dir "${signal_root}/etc/avoverip" \
+                  --systemd-dir "${signal_root}/systemd" \
+                  > "${signal_root}/install.log" 2>&1; then
+              echo "installer unexpectedly survived injected termination signal" >&2
+              exit 1
+            fi
+            test -f "${signal_root}/interrupted"
+            grep -F 'restoring prior binaries' "${signal_root}/install.log"
+            test "$(cat "${signal_root}/usr/local/bin/tx")" = 'previous tx'
+            test "$(cat "${signal_root}/usr/local/bin/rx")" = 'previous rx'
+            test "$(find "${signal_root}/usr/local/bin" -name '*.fastipav.previous.*' | wc -l)" -eq 0
+            rm -rf "${signal_root}" "${signal_shim}"
+          fi
+
+          install_root="$(mktemp -d)"
+          bash scripts/install.sh \
+            --version "${release_tag}" \
+            --local-dist \
+            --prefix "${install_root}/usr/local" \
+            --config-dir "${install_root}/etc/avoverip" \
+            --systemd-dir "${install_root}/systemd"
+
+          test -x "${install_root}/usr/local/bin/tx"
+          test -x "${install_root}/usr/local/bin/rx"
+          test "$("${install_root}/usr/local/bin/tx" --version)" = "tx ${workspace_version}"
+          test "$("${install_root}/usr/local/bin/rx" --version)" = "rx ${workspace_version}"
+          test -f "${install_root}/usr/local/share/fastipav/LICENSE"
+          test -f "${install_root}/etc/avoverip/tx.toml"
+          test -f "${install_root}/etc/avoverip/rx.toml"
+          grep -F "ExecStart=${install_root}/usr/local/bin/tx --config ${install_root}/etc/avoverip/tx.toml" \
+            "${install_root}/systemd/avoverip-tx.service"
+          grep -F "ExecStart=${install_root}/usr/local/bin/rx --config ${install_root}/etc/avoverip/rx.toml" \
+            "${install_root}/systemd/avoverip-rx.service"
+
+          chmod 0600 "${install_root}/etc/avoverip/tx.toml" "${install_root}/etc/avoverip/rx.toml"
+          bash scripts/install.sh \
+            --version "${release_tag}" \
+            --local-dist \
+            --prefix "${install_root}/usr/local" \
+            --config-dir "${install_root}/etc/avoverip" \
+            --systemd-dir "${install_root}/systemd"
+          test "$(stat -c '%a' "${install_root}/etc/avoverip/tx.toml")" = "600"
+          test "$(stat -c '%a' "${install_root}/etc/avoverip/rx.toml")" = "600"
+
+          PATH=/usr/bin:/bin \
+          TX_BIN="${install_root}/usr/local/bin/tx" \
+          RX_BIN="${install_root}/usr/local/bin/rx" \
+          CONFIG_DIR="${install_root}/usr/local/share/fastipav/configs" \
+            bash scripts/smoke-test.sh
+
+          if [ "${{ matrix.name }}" = "ubuntu-22.04-x86_64" ]; then
+            system_install_root="$(mktemp -d)"
+            chmod 0755 "${system_install_root}"
+            bash scripts/install.sh \
+              --version "${release_tag}" \
+              --local-dist \
+              --prefix "${system_install_root}/usr/local" \
+              --config-dir "${system_install_root}/etc/avoverip"
+
+            id -u avoverip >/dev/null
+            test "$(id -u avoverip)" -gt 0
+            grep -Fx "User=avoverip" /etc/systemd/system/avoverip-tx.service
+            grep -Fx "Group=avoverip" /etc/systemd/system/avoverip-tx.service
+            grep -Fx "SupplementaryGroups=video audio" /etc/systemd/system/avoverip-tx.service
+            grep -Fx "User=avoverip" /etc/systemd/system/avoverip-rx.service
+            grep -Fx "Group=avoverip" /etc/systemd/system/avoverip-rx.service
+            grep -Fx "SupplementaryGroups=video audio" /etc/systemd/system/avoverip-rx.service
+            test "$(stat -c '%a' "${system_install_root}/etc/avoverip/tx.toml")" = "640"
+            test "$(stat -c '%a' "${system_install_root}/etc/avoverip/rx.toml")" = "640"
+            test "$(stat -c '%U:%G' "${system_install_root}/etc/avoverip/tx.toml")" = "root:avoverip"
+            test "$(stat -c '%U:%G' "${system_install_root}/etc/avoverip/rx.toml")" = "root:avoverip"
+          fi

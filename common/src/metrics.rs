@@ -35,6 +35,7 @@ pub struct StatsSnapshot {
     pub audio_chunks_total: u64,
     pub dropped_audio_chunks: u64,
     pub audio_underruns: u64,
+    pub qos_events: u64,
     pub estimated_capture_to_display_ms: Option<f64>,
     pub estimated_av_sync_ms: Option<f64>,
     pub estimated_audio_offset_ms: Option<f64>,
@@ -88,6 +89,7 @@ impl SharedServiceState {
                 audio_chunks_total: 0,
                 dropped_audio_chunks: 0,
                 audio_underruns: 0,
+                qos_events: 0,
                 estimated_capture_to_display_ms: None,
                 estimated_av_sync_ms: None,
                 estimated_audio_offset_ms: None,
@@ -110,6 +112,20 @@ impl SharedServiceState {
         drop(health);
         let mut stats = self.stats.write().await;
         stats.state = "running".to_string();
+        stats.last_error = None;
+        push_note(&mut stats.notes, message);
+    }
+
+    pub async fn mark_waiting(&self, state: impl Into<String>, message: impl Into<String>) {
+        let state = state.into();
+        let message = message.into();
+        let mut health = self.health.write().await;
+        health.ok = false;
+        health.state = state.clone();
+        health.message = message.clone();
+        drop(health);
+        let mut stats = self.stats.write().await;
+        stats.state = state;
         push_note(&mut stats.notes, message);
     }
 
@@ -192,33 +208,45 @@ impl SharedServiceState {
         video_pipeline: impl Into<String>,
         audio_pipeline: Option<String>,
     ) {
+        let video_pipeline = video_pipeline.into();
         let mut stats = self.stats.write().await;
-        stats.video_pipeline = Some(video_pipeline.into());
-        stats.audio_pipeline = audio_pipeline;
+        stats.video_pipeline = Some(pipeline_shape(&video_pipeline));
+        stats.audio_pipeline = audio_pipeline.as_deref().map(pipeline_shape);
     }
 
-    pub async fn bump_frames_total(&self) {
-        self.stats.write().await.frames_total += 1;
+    pub async fn add_frames_total(&self, delta: u64) {
+        let mut stats = self.stats.write().await;
+        stats.frames_total = stats.frames_total.saturating_add(delta);
     }
 
     pub async fn bump_dropped_frames(&self) {
-        self.stats.write().await.dropped_frames += 1;
+        let mut stats = self.stats.write().await;
+        stats.dropped_frames = stats.dropped_frames.saturating_add(1);
     }
 
-    pub async fn bump_audio_chunks_total(&self) {
-        self.stats.write().await.audio_chunks_total += 1;
+    pub async fn add_audio_chunks_total(&self, delta: u64) {
+        let mut stats = self.stats.write().await;
+        stats.audio_chunks_total = stats.audio_chunks_total.saturating_add(delta);
     }
 
     pub async fn bump_dropped_audio_chunks(&self) {
-        self.stats.write().await.dropped_audio_chunks += 1;
+        let mut stats = self.stats.write().await;
+        stats.dropped_audio_chunks = stats.dropped_audio_chunks.saturating_add(1);
     }
 
     pub async fn bump_audio_underruns(&self) {
-        self.stats.write().await.audio_underruns += 1;
+        let mut stats = self.stats.write().await;
+        stats.audio_underruns = stats.audio_underruns.saturating_add(1);
+    }
+
+    pub async fn add_qos_events(&self, delta: u64) {
+        let mut stats = self.stats.write().await;
+        stats.qos_events = stats.qos_events.saturating_add(delta);
     }
 
     pub async fn bump_pipeline_restarts(&self) {
-        self.stats.write().await.pipeline_restarts += 1;
+        let mut stats = self.stats.write().await;
+        stats.pipeline_restarts = stats.pipeline_restarts.saturating_add(1);
     }
 
     pub async fn set_last_error(&self, message: impl Into<String>) {
@@ -246,5 +274,75 @@ fn push_note(notes: &mut Vec<String>, note: String) {
     if notes.len() > 32 {
         let overflow = notes.len() - 32;
         notes.drain(0..overflow);
+    }
+}
+
+pub fn pipeline_shape(description: &str) -> String {
+    split_pipeline_segments(description)
+        .into_iter()
+        .filter_map(|segment| {
+            let segment = segment.trim();
+            if segment.is_empty() {
+                return None;
+            }
+            let head = segment.split_whitespace().next()?;
+            if head.contains('/') {
+                Some(head.split(',').next().unwrap_or(head).to_string())
+            } else {
+                Some(head.to_string())
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ! ")
+}
+
+fn split_pipeline_segments(description: &str) -> Vec<&str> {
+    let mut segments = Vec::new();
+    let mut start = 0;
+    let mut quote = None;
+    let mut escaped = false;
+
+    for (index, ch) in description.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        match quote {
+            Some(active) if ch == active => quote = None,
+            Some(_) => {}
+            None if ch == '"' || ch == '\'' => quote = Some(ch),
+            None if ch == '!' => {
+                segments.push(&description[start..index]);
+                start = index + ch.len_utf8();
+            }
+            None => {}
+        }
+    }
+    segments.push(&description[start..]);
+    segments
+}
+
+#[cfg(test)]
+mod pipeline_shape_tests {
+    use super::pipeline_shape;
+
+    #[test]
+    fn removes_element_properties_and_caps_fields() {
+        let description = r#"rtspsrc location="rtsp://user:secret@example.test/live" ! application/x-rtp,media=video,payload=96 ! rtph264depay ! fakesink sync=false"#;
+        assert_eq!(
+            pipeline_shape(description),
+            "rtspsrc ! application/x-rtp ! rtph264depay ! fakesink"
+        );
+        assert!(!pipeline_shape(description).contains("secret"));
+    }
+
+    #[test]
+    fn ignores_bang_inside_quoted_property_values() {
+        let description = r#"identity name=x dump=false data="secret!value" ! fakesink"#;
+        assert_eq!(pipeline_shape(description), "identity ! fakesink");
     }
 }

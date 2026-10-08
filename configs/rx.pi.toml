@@ -21,17 +21,20 @@ port = 8082
 [recovery]
 restart_backoff_ms = 1000
 monitor_interval_ms = 250
+media_timeout_ms = 5000
 
 [video]
 width = 1920
 height = 1080
 fps = 30
-jitter_latency_ms = 20
-decoder_element = "decodebin"
+# Prefer minimum buffering on a wired multicast LAN; increase for jitter.
+jitter_latency_ms = 10
+decoder_element = "auto"
 renderer = "kms_drm"
 fullscreen = true
-sync = true
-max_lateness_ms = 25
+# Lowest-latency video projection: render decoded frames without clock waiting.
+sync = false
+max_lateness_ms = -1
 
 [audio]
 enabled = false

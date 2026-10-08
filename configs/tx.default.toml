@@ -21,6 +21,7 @@ port = 8081
 [recovery]
 restart_backoff_ms = 1000
 monitor_interval_ms = 250
+media_timeout_ms = 5000
 
 [video]
 source_caps = "image/jpeg,width=1920,height=1080,framerate=30/1"
@@ -40,4 +41,4 @@ sample_rate = 48000
 channels = 2
 buffer_time_us = 20000
 latency_time_us = 5000
-use_driver_timestamps = true
+use_driver_timestamps = false
