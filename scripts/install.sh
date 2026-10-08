@@ -444,13 +444,13 @@ restore_binary() {
   local existed="$3"
   if [ "${existed}" = true ]; then
     if ! as_root mv -f "${backup}" "${PREFIX}/bin/${role}"; then
-      printf '[install] ERROR: rollback failed for %s; previous binary retained at %s\\n' \
+      printf '[install] ERROR: rollback failed for %s; previous binary retained at %s\n' \
         "${role}" "${backup}" >&2
       return 1
     fi
   else
     if ! as_root rm -f "${PREFIX}/bin/${role}"; then
-      printf '[install] ERROR: cannot remove newly installed %s during rollback\\n' \
+      printf '[install] ERROR: cannot remove newly installed %s during rollback\n' \
         "${role}" >&2
       return 1
     fi
@@ -463,7 +463,7 @@ cleanup() {
   local rx_restored=true
   trap - EXIT
   if [ "${status}" -ne 0 ] && [ "${ACTIVATION_STARTED}" = true ]; then
-    printf '[install] installation failed after binary activation; restoring prior binaries\\n' >&2
+    printf '[install] installation failed after binary activation; restoring prior binaries\n' >&2
     restore_binary tx "${TX_BACKUP}" "${TX_EXISTED}" || tx_restored=false
     restore_binary rx "${RX_BACKUP}" "${RX_EXISTED}" || rx_restored=false
   fi
