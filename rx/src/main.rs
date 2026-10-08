@@ -279,6 +279,7 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
         let mut last_video_buffer = started;
         let mut last_audio_buffer = started;
         let mut last_video_ingress = started;
+        let mut last_audio_ingress = started;
         let mut last_video_codec = started;
         let mut video_total = 0_u64;
         let mut audio_total = 0_u64;
