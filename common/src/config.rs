@@ -299,7 +299,7 @@ pub struct RxVideoConfig {
     pub renderer: RendererKind,
     #[serde(default = "default_fullscreen")]
     pub fullscreen: bool,
-    #[serde(default = "default_sink_sync")]
+    #[serde(default = "default_video_sink_sync")]
     pub sync: bool,
     #[serde(default = "default_video_max_lateness_ms")]
     pub max_lateness_ms: i64,
@@ -316,7 +316,7 @@ impl Default for RxVideoConfig {
             sink_element: String::new(),
             renderer: RendererKind::Auto,
             fullscreen: default_fullscreen(),
-            sync: default_sink_sync(),
+            sync: default_video_sink_sync(),
             max_lateness_ms: default_video_max_lateness_ms(),
         }
     }
@@ -822,6 +822,12 @@ fn default_fullscreen() -> bool {
     true
 }
 
+fn default_video_sink_sync() -> bool {
+    // Present newly decoded frames immediately rather than scheduling them
+    // against the receiver's (unsynchronized) pipeline clock.
+    false
+}
+
 fn default_sink_sync() -> bool {
     true
 }
@@ -861,6 +867,14 @@ fn default_use_driver_timestamps() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn receiver_defaults_to_immediate_video_rendering() {
+        let rx = RxConfig::default();
+        assert!(!rx.video.sync);
+        // Audio retains its own timing policy; it is not silently changed.
+        assert!(rx.audio.sync);
+    }
 
     #[test]
     fn default_configs_are_valid() {
