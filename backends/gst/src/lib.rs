@@ -484,11 +484,14 @@ fn tx_video_branch(
     // x264enc with byte-stream=true already emits AU-aligned H.264, which
     // rtph264pay accepts directly. Keep h264parse for hardware encoders and
     // custom fragments whose output caps/sequence headers may differ.
-    let h264_parser = if encoder.starts_with("x264enc ") && !encoder.contains('!') {
+    let direct_x264_rtp = encoder.starts_with("x264enc ") && !encoder.contains('!');
+    let h264_parser = if direct_x264_rtp {
         ""
     } else {
         "h264parse config-interval=-1 ! "
     };
+    // Preserve SPS/PPS insertion at each IDR when bypassing h264parse.
+    let pay_config_interval = if direct_x264_rtp { -1 } else { 1 };
     let source_caps = if config.video.source_caps.trim().is_empty() {
         format!(
             "video/x-raw,width={},height={},framerate={}/1",
@@ -525,7 +528,7 @@ fn tx_video_branch(
             "! {encoder} ",
             "! {h264_parser}video/x-h264,stream-format=byte-stream,alignment=au ",
             "! identity name=video_monitor silent=true ",
-            "! rtph264pay pt={payload_type} config-interval=1 mtu={mtu} ",
+            "! rtph264pay pt={payload_type} config-interval={pay_config_interval} mtu={mtu} ",
             "! identity name=video_egress_monitor silent=true ",
             "! udpsink host={group} port={port} auto-multicast=true ttl-mc={ttl} sync=false async=false{iface}"
         ),
@@ -540,6 +543,7 @@ fn tx_video_branch(
         encoder = encoder,
         h264_parser = h264_parser,
         payload_type = config.network.video_payload_type,
+        pay_config_interval = pay_config_interval,
         mtu = config.network.rtp_mtu,
         group = quoted(&config.network.multicast_group),
         port = config.network.video_port,
@@ -1131,6 +1135,7 @@ mod tests {
             "byte-stream=true ! video/x-h264,stream-format=byte-stream,alignment=au"
         ));
         assert!(!explicit.contains("h264parse"));
+        assert!(explicit.contains("rtph264pay pt=96 config-interval=-1"));
         assert_pipeline_parses(&explicit);
 
         tx.video.encoder_element = "auto".into();
@@ -1143,6 +1148,7 @@ mod tests {
         assert!(hardware.contains(
             "! h264parse config-interval=-1 ! video/x-h264,stream-format=byte-stream,alignment=au"
         ));
+        assert!(hardware.contains("rtph264pay pt=96 config-interval=1"));
 
         tx.video.encoder_element = "identity ! identity".into();
         let custom = tx_video_branch(&tx, Some("lo"), false);
