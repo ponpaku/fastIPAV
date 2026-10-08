@@ -483,6 +483,11 @@ cleanup() {
   exit "${status}"
 }
 trap cleanup EXIT
+# Run EXIT cleanup for catchable termination signals as well. In particular,
+# service shutdown during an upgrade must not leave just one new binary active.
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 LOCAL_PACKAGE="${REPO_ROOT}/dist/${PACKAGE_NAME}"
 LOCAL_CHECKSUM="${REPO_ROOT}/dist/${CHECKSUM_NAME}"
