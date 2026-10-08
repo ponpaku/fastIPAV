@@ -1079,7 +1079,7 @@ mod tests {
         let (branch, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
         assert!(branch.contains("! v4l2h264dec ! identity name=video_codec_monitor"));
         assert!(!branch.contains("! videoconvert"));
-        assert!(branch.contains("queue silent=true leaky=downstream max-size-buffers=1 "));
+        assert!(branch.contains("queue leaky=downstream max-size-buffers=1 "));
         assert!(branch.contains("! kmssink "));
     }
 
