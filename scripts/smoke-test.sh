@@ -326,10 +326,10 @@ printf '%s' "${RX_STATS}" | grep -Eq '"audio_chunks_total":[1-9][0-9]*' || {
 RX_STATS="$(curl -fsS "http://127.0.0.1:18082/stats")"
 RX_VIDEO_BEFORE_LOSS="$(json_u64_field "${RX_STATS}" frames_total)"
 RX_AUDIO_BEFORE_LOSS="$(json_u64_field "${RX_STATS}" audio_chunks_total)"
-[ -n "${RX_VIDEO_BEFORE_LOSS}" ] && [ -n "${RX_AUDIO_BEFORE_LOSS}" ] || {
+if [ -z "${RX_VIDEO_BEFORE_LOSS}" ] || [ -z "${RX_AUDIO_BEFORE_LOSS}" ]; then
   printf '[smoke-test] could not read decoded RX counters before media loss\n' >&2
   exit 1
-}
+fi
 RX_RESTARTS_BEFORE="$(json_u64_field "${RX_STATS}" pipeline_restarts)"
 [ -n "${RX_RESTARTS_BEFORE}" ] || {
   printf '[smoke-test] could not read rx pipeline_restarts before media loss\n' >&2
