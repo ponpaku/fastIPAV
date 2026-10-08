@@ -431,13 +431,13 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                             break "video ingress heartbeat channel closed".to_string();
                         }
                         let heartbeat = *events.video_ingress.borrow_and_update();
-                        if let Some(observed_at) = heartbeat.observed_at {
-                            last_video_ingress = observed_at;
-                        }
                         if heartbeat.total > video_ingress_total {
-                            if first_video_ingress.is_none() {
-                                first_video_ingress = heartbeat.observed_at;
-                            }
+                            record_input_heartbeat(
+                                &mut first_video_ingress,
+                                &mut last_video_ingress,
+                                heartbeat.observed_at,
+                                media_timeout,
+                            );
                             video_ingress_total = heartbeat.total;
                         }
                     }
@@ -446,13 +446,13 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                             break "video decoder heartbeat channel closed".to_string();
                         }
                         let heartbeat = *events.video_codec.borrow_and_update();
-                        if let Some(observed_at) = heartbeat.observed_at {
-                            last_video_codec = observed_at;
-                        }
                         if heartbeat.total > video_codec_total {
-                            if first_video_codec.is_none() {
-                                first_video_codec = heartbeat.observed_at;
-                            }
+                            record_input_heartbeat(
+                                &mut first_video_codec,
+                                &mut last_video_codec,
+                                heartbeat.observed_at,
+                                media_timeout,
+                            );
                             video_codec_total = heartbeat.total;
                         }
                         if !video_codec_ready && heartbeat.total > 0 {
@@ -465,13 +465,13 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
                             break "audio ingress heartbeat channel closed".to_string();
                         }
                         let heartbeat = *events.audio_ingress.borrow_and_update();
-                        if let Some(observed_at) = heartbeat.observed_at {
-                            last_audio_ingress = observed_at;
-                        }
                         if heartbeat.total > audio_ingress_total {
-                            if first_audio_ingress.is_none() {
-                                first_audio_ingress = heartbeat.observed_at;
-                            }
+                            record_input_heartbeat(
+                                &mut first_audio_ingress,
+                                &mut last_audio_ingress,
+                                heartbeat.observed_at,
+                                media_timeout,
+                            );
                             audio_ingress_total = heartbeat.total;
                         }
                     }
@@ -557,6 +557,23 @@ async fn run_supervisor(config: RxConfig, state: SharedServiceState) -> Result<(
     }
 }
 
+// A transmitter can stop for a long time before returning.  When a fresh
+// burst arrives after an idle interval, give its decoder a new full timeout
+// rather than interpreting old RTP as continuous stalled input.
+fn record_input_heartbeat(
+    first_input: &mut Option<Instant>,
+    last_input: &mut Instant,
+    observed_at: Option<Instant>,
+    timeout: Duration,
+) {
+    if let Some(observed_at) = observed_at {
+        if first_input.is_none() || observed_at.saturating_duration_since(*last_input) > timeout {
+            *first_input = Some(observed_at);
+        }
+        *last_input = observed_at;
+    }
+}
+
 // A short RTP burst followed by an offline transmitter is not a decoder stall.
 // Restart only if upstream media is still arriving without downstream output.
 fn missing_output_while_input_active(
@@ -566,52 +583,6 @@ fn missing_output_while_input_active(
 ) -> bool {
     first_input.is_some_and(|first_seen| first_seen.elapsed() > timeout)
         && last_input.elapsed() <= timeout
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn absent_input_does_not_trigger_restart() {
-        let now = Instant::now();
-        assert!(!missing_output_while_input_active(
-            None,
-            now,
-            Duration::from_secs(5)
-        ));
-    }
-
-    #[test]
-    fn burst_then_offline_does_not_trigger_restart() {
-        let old = Instant::now() - Duration::from_secs(8);
-        assert!(!missing_output_while_input_active(
-            Some(old),
-            old,
-            Duration::from_secs(5)
-        ));
-    }
-
-    #[test]
-    fn persistent_input_without_output_triggers_restart() {
-        let now = Instant::now();
-        let old = now - Duration::from_secs(8);
-        assert!(missing_output_while_input_active(
-            Some(old),
-            now,
-            Duration::from_secs(5)
-        ));
-    }
-
-    #[test]
-    fn recent_input_does_not_trigger_premature_restart() {
-        let now = Instant::now();
-        assert!(!missing_output_while_input_active(
-            Some(now),
-            now,
-            Duration::from_secs(5)
-        ));
-    }
 }
 
 async fn shutdown_signal() {
@@ -697,5 +668,76 @@ async fn seed_estimated_metrics(config: &RxConfig, state: &SharedServiceState) {
         state
             .add_note("A/V offset is a configuration-based estimate; independent RTP streams are not sender-clock synchronized")
             .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn absent_input_does_not_trigger_restart() {
+        let now = Instant::now();
+        assert!(!missing_output_while_input_active(
+            None,
+            now,
+            Duration::from_secs(5)
+        ));
+    }
+
+    #[test]
+    fn burst_then_offline_does_not_trigger_restart() {
+        let old = Instant::now() - Duration::from_secs(8);
+        assert!(!missing_output_while_input_active(
+            Some(old),
+            old,
+            Duration::from_secs(5)
+        ));
+    }
+
+    #[test]
+    fn persistent_input_without_output_triggers_restart() {
+        let now = Instant::now();
+        let old = now - Duration::from_secs(8);
+        assert!(missing_output_while_input_active(
+            Some(old),
+            now,
+            Duration::from_secs(5)
+        ));
+    }
+
+    #[test]
+    fn a_new_burst_after_long_silence_gets_a_full_timeout() {
+        let now = Instant::now();
+        let old = now - Duration::from_secs(20);
+        let timeout = Duration::from_secs(5);
+        let mut first = Some(old);
+        let mut last = old;
+        record_input_heartbeat(&mut first, &mut last, Some(now), timeout);
+        assert_eq!(first, Some(now));
+        assert_eq!(last, now);
+        assert!(!missing_output_while_input_active(first, last, timeout));
+    }
+
+    #[test]
+    fn continuous_input_without_output_still_triggers_restart() {
+        let now = Instant::now();
+        let old = now - Duration::from_secs(20);
+        let timeout = Duration::from_secs(5);
+        let mut first = Some(old);
+        let mut last = now - Duration::from_secs(1);
+        record_input_heartbeat(&mut first, &mut last, Some(now), timeout);
+        assert_eq!(first, Some(old));
+        assert!(missing_output_while_input_active(first, last, timeout));
+    }
+
+    #[test]
+    fn recent_input_does_not_trigger_premature_restart() {
+        let now = Instant::now();
+        assert!(!missing_output_while_input_active(
+            Some(now),
+            now,
+            Duration::from_secs(5)
+        ));
     }
 }
