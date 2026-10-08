@@ -214,30 +214,30 @@ jobs:
             # An interrupted installer must take the same rollback path.
             signal_root="$(mktemp -d)"
             mkdir -p "${signal_root}/usr/local/bin"
-            printf 'previous tx\\n' > "${signal_root}/usr/local/bin/tx"
-            printf 'previous rx\\n' > "${signal_root}/usr/local/bin/rx"
+            printf 'previous tx\n' > "${signal_root}/usr/local/bin/tx"
+            printf 'previous rx\n' > "${signal_root}/usr/local/bin/rx"
             chmod 0755 "${signal_root}/usr/local/bin/tx" "${signal_root}/usr/local/bin/rx"
             signal_shim="$(mktemp -d)"
             # Variables below are expanded by the generated shim at runtime.
             # shellcheck disable=SC2016
-            printf '%s\\n' \\
-              '#!/usr/bin/env bash' \\
-              'if [ "${@: -1}" = "${MV_SIGNAL_DEST}" ] && [ ! -e "${MV_SIGNAL_MARKER}" ]; then' \\
-              '  : > "${MV_SIGNAL_MARKER}"' \\
-              '  kill -TERM "$PPID"' \\
-              '  exit 0' \\
-              'fi' \\
+            printf '%s\n' \
+              '#!/usr/bin/env bash' \
+              'if [ "${@: -1}" = "${MV_SIGNAL_DEST}" ] && [ ! -e "${MV_SIGNAL_MARKER}" ]; then' \
+              '  : > "${MV_SIGNAL_MARKER}"' \
+              '  kill -TERM "$PPID"' \
+              '  exit 0' \
+              'fi' \
               'exec /usr/bin/mv "$@"' > "${signal_shim}/mv"
             chmod 0755 "${signal_shim}/mv"
-            if MV_SIGNAL_DEST="${signal_root}/usr/local/bin/rx" \\
-                MV_SIGNAL_MARKER="${signal_root}/interrupted" \\
-                PATH="${signal_shim}:${PATH}" \\
-                bash scripts/install.sh \\
-                  --version "${release_tag}" \\
-                  --local-dist \\
-                  --prefix "${signal_root}/usr/local" \\
-                  --config-dir "${signal_root}/etc/avoverip" \\
-                  --systemd-dir "${signal_root}/systemd" \\
+            if MV_SIGNAL_DEST="${signal_root}/usr/local/bin/rx" \
+                MV_SIGNAL_MARKER="${signal_root}/interrupted" \
+                PATH="${signal_shim}:${PATH}" \
+                bash scripts/install.sh \
+                  --version "${release_tag}" \
+                  --local-dist \
+                  --prefix "${signal_root}/usr/local" \
+                  --config-dir "${signal_root}/etc/avoverip" \
+                  --systemd-dir "${signal_root}/systemd" \
                   > "${signal_root}/install.log" 2>&1; then
               echo "installer unexpectedly survived injected termination signal" >&2
               exit 1
