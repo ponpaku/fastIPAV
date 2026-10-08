@@ -481,6 +481,14 @@ fn tx_video_branch(
         config.video.source_element.clone()
     };
     let (encoder, encoder_input_caps) = select_h264_encoder(config);
+    // x264enc with byte-stream=true already emits AU-aligned H.264, which
+    // rtph264pay accepts directly. Keep h264parse for hardware encoders and
+    // custom fragments whose output caps/sequence headers may differ.
+    let h264_parser = if encoder.starts_with("x264enc ") && !encoder.contains('!') {
+        ""
+    } else {
+        "h264parse config-interval=-1 ! "
+    };
     let source_caps = if config.video.source_caps.trim().is_empty() {
         format!(
             "video/x-raw,width={},height={},framerate={}/1",
@@ -515,8 +523,7 @@ fn tx_video_branch(
             "! {conversion}video/x-raw,width={width},height={height},framerate={fps}/1{encoder_input_caps} ",
             "! identity name=video_ingress_monitor silent=true ",
             "! {encoder} ",
-            "! h264parse config-interval=-1 ",
-            "! video/x-h264,stream-format=byte-stream,alignment=au ",
+            "! {h264_parser}video/x-h264,stream-format=byte-stream,alignment=au ",
             "! identity name=video_monitor silent=true ",
             "! rtph264pay pt={payload_type} config-interval=1 mtu={mtu} ",
             "! identity name=video_egress_monitor silent=true ",
@@ -531,6 +538,7 @@ fn tx_video_branch(
         fps = config.video.fps,
         encoder_input_caps = encoder_input_caps,
         encoder = encoder,
+        h264_parser = h264_parser,
         payload_type = config.network.video_payload_type,
         mtu = config.network.rtp_mtu,
         group = quoted(&config.network.multicast_group),
@@ -1112,6 +1120,33 @@ mod tests {
         let fallback = tx_video_branch(&tx, Some("lo"), true);
         assert!(fallback.contains("! jpegdec ! videoconvert ! video/x-raw"));
         assert_pipeline_parses(&fallback);
+    }
+
+    #[test]
+    fn x264_direct_rtp_path_skips_redundant_h264_parser() {
+        let mut tx = TxConfig::default();
+        tx.video.encoder_element = "x264enc tune=zerolatency speed-preset=ultrafast".into();
+        let explicit = tx_video_branch(&tx, Some("lo"), false);
+        assert!(explicit.contains(
+            "byte-stream=true ! video/x-h264,stream-format=byte-stream,alignment=au"
+        ));
+        assert!(!explicit.contains("h264parse"));
+        assert_pipeline_parses(&explicit);
+
+        tx.video.encoder_element = "auto".into();
+        let automatic = tx_video_branch(&tx, Some("lo"), false);
+        assert!(!automatic.contains("h264parse"));
+        assert_pipeline_parses(&automatic);
+
+        tx.video.encoder_element = "v4l2h264enc".into();
+        let hardware = tx_video_branch(&tx, Some("lo"), false);
+        assert!(hardware.contains(
+            "! h264parse config-interval=-1 ! video/x-h264,stream-format=byte-stream,alignment=au"
+        ));
+
+        tx.video.encoder_element = "identity ! identity".into();
+        let custom = tx_video_branch(&tx, Some("lo"), false);
+        assert!(custom.contains("! h264parse config-interval=-1 ! video/x-h264"));
     }
 
     #[test]
