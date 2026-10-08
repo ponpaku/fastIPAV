@@ -665,6 +665,21 @@ fn rx_video_branch(
         .last()
         .unwrap_or("unknown")
         .to_string();
+    // Hardware V4L2 decoding can negotiate a DRM-compatible buffer directly
+    // with kmssink. Routing it through the CPU videoconvert element defeats
+    // that path and may require a full-frame copy for every decoded frame.
+    // Keep software decoding and custom sinks on the conversion path.
+    let direct_kms = decoder == "v4l2h264dec"
+        && config.video.sink_element.trim().is_empty()
+        && sink.starts_with("kmssink ");
+    let post_decode = if direct_kms {
+        String::new()
+    } else {
+        format!(
+            " ! videoconvert ! video/x-raw,width={},height={},framerate={}/1",
+            config.video.width, config.video.height, config.video.fps
+        )
+    };
     let pipeline = format!(
         concat!(
             "udpsrc address={group} port={port} auto-multicast=true mtu={mtu}{iface}{buffer_size} caps={caps} ",
@@ -673,11 +688,9 @@ fn rx_video_branch(
             "! rtph264depay wait-for-keyframe=true ",
             "! video/x-h264,stream-format=byte-stream,alignment=au ",
             "! h264parse ",
-            "! {decoder} ",
-            "! videoconvert ",
-            "! video/x-raw,width={width},height={height},framerate={fps}/1 ",
+            "! {decoder}{post_decode} ",
             "! identity name=video_codec_monitor silent=true ",
-            "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ",
+            "! queue leaky=downstream max-size-buffers=1 max-size-bytes=0 max-size-time=0 ",
             "! identity name=video_monitor silent=true ",
             "! {sink}"
         ),
@@ -689,9 +702,7 @@ fn rx_video_branch(
         latency_ms = config.video.jitter_latency_ms,
         mtu = config.network.rtp_mtu,
         decoder = decoder,
-        width = config.video.width,
-        height = config.video.height,
-        fps = config.video.fps,
+        post_decode = post_decode,
         sink = sink,
     );
     (pipeline, renderer_name)
@@ -1018,6 +1029,32 @@ mod tests {
             GstServicePipeline::for_rx(&config, Some("lo"))
                 .unwrap_or_else(|err| panic!("failed to parse {name}: {err:#}"));
         }
+    }
+
+    #[test]
+    fn pi_v4l2_kms_path_skips_cpu_video_conversion() {
+        let mut rx = RxConfig::default();
+        rx.platform.profile = PlatformProfile::RaspberryPi;
+        rx.video.renderer = RendererKind::KmsDrm;
+        rx.video.decoder_element = "v4l2h264dec".to_string();
+        let (branch, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
+        assert!(branch.contains("! v4l2h264dec ! identity name=video_codec_monitor"));
+        assert!(!branch.contains("! videoconvert"));
+        assert!(branch.contains("queue leaky=downstream max-size-buffers=1 "));
+        assert!(branch.contains("! kmssink "));
+    }
+
+    #[test]
+    fn software_decoder_and_custom_video_sinks_retain_conversion() {
+        let mut rx = RxConfig::default();
+        rx.video.decoder_element = "avdec_h264".to_string();
+        let (software, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
+        assert!(software.contains("! avdec_h264 ! videoconvert ! video/x-raw"));
+        rx.video.decoder_element = "v4l2h264dec".to_string();
+        rx.video.sink_element = "fakesink sync=false".to_string();
+        rx.video.renderer = RendererKind::KmsDrm;
+        let (custom_sink, _) = rx_video_branch(&rx, Some("lo"), &rx.video.renderer);
+        assert!(custom_sink.contains("! v4l2h264dec ! videoconvert ! video/x-raw"));
     }
 
     #[test]
