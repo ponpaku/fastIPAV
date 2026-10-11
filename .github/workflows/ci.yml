@@ -2,9 +2,16 @@ name: CI
 
 on:
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   push:
     branches:
       - main
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -42,7 +49,15 @@ jobs:
           echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
           "${HOME}/.cargo/bin/rustup" toolchain install 1.99.0 --profile minimal
 
-      - name: Install cargo-audit
+      - name: Restore cargo-audit executable
+        id: cargo_audit_cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-v0.22.2-ubuntu-24.04-x86_64
+
+      - name: Install cargo-audit (cache miss only)
+        if: steps.cargo_audit_cache.outputs.cache-hit != 'true'
         run: cargo install cargo-audit --version 0.22.2 --locked
 
       - name: Audit Rust dependencies
@@ -52,20 +67,9 @@ jobs:
     name: test (${{ matrix.name }})
     strategy:
       fail-fast: false
+      # PR: x86_64 + ARM64 representative tests; main/manual: complete distro matrix.
       matrix:
-        include:
-          - name: ubuntu-24.04-x86_64
-            runner: ubuntu-24.04
-            image: ubuntu:24.04
-          - name: ubuntu-22.04-x86_64
-            runner: ubuntu-24.04
-            image: ubuntu:22.04
-          - name: ubuntu-22.04-arm64
-            runner: ubuntu-24.04-arm
-            image: ubuntu:22.04
-          - name: debian-12-arm64
-            runner: ubuntu-24.04-arm
-            image: debian:12
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"name":"ubuntu-24.04-x86_64","runner":"ubuntu-24.04","image":"ubuntu:24.04"},{"name":"ubuntu-22.04-arm64","runner":"ubuntu-24.04-arm","image":"ubuntu:22.04"}]' || '[{"name":"ubuntu-24.04-x86_64","runner":"ubuntu-24.04","image":"ubuntu:24.04"},{"name":"ubuntu-22.04-x86_64","runner":"ubuntu-24.04","image":"ubuntu:22.04"},{"name":"ubuntu-22.04-arm64","runner":"ubuntu-24.04-arm","image":"ubuntu:22.04"},{"name":"debian-12-arm64","runner":"ubuntu-24.04-arm","image":"debian:12"}]') }}
     runs-on: ${{ matrix.runner }}
     container:
       image: ${{ matrix.image }}
